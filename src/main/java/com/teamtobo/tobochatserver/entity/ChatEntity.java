@@ -1,4 +1,4 @@
-package com.teamtobo.tobochatserver.entities;
+package com.teamtobo.tobochatserver.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,25 +13,28 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@DynamoDbBean // Đánh dấu đây là Bean của DynamoDB
-public class ChatEntity {
+@DynamoDbBean
+public class ChatEntity { // Single Tale (Dùng chung cho tất cả Entity)
 
+    // Partition Key: Khoá phân vùng
     private String pk;
-    private String sk;
-    private String entityType; // Loại: USER, MESSAGE, ROOM
 
-    // Dữ liệu chung (Chat content, User name, Room name...)
-    // Trong thực tế có thể dùng Map<String, Object> để linh động hơn
+    // Sort Key: Khoá sắp xếp
+    private String sk;
+
+    // Loại entity (USER, MSG...)
+    private String entityType;
+
     private String data;
 
     private String senderId;
     private String timestamp;
 
-    @DynamoDbPartitionKey // Map với cột 'pk' trong bảng
+    @DynamoDbPartitionKey
     @DynamoDbAttribute("pk")
     public String getPk() { return pk; }
 
-    @DynamoDbSortKey // Map với cột 'sk' trong bảng
+    @DynamoDbSortKey
     @DynamoDbAttribute("sk")
     public String getSk() { return sk; }
 }

@@ -1,4 +1,4 @@
-package iuh.fit.se.exception;
+package com.teamtobo.tobochatserver.exception;
 
 import lombok.Getter;
 import lombok.Setter;

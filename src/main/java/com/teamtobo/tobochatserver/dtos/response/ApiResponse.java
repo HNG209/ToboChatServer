@@ -1,4 +1,4 @@
-package iuh.fit.se.dtos.response;
+package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;

@@ -1,6 +1,6 @@
-package iuh.fit.se.exception;
+package com.teamtobo.tobochatserver.exception;
 
-import iuh.fit.se.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -53,8 +53,6 @@ public class GlobalExceptionHandler { // Xử lý lỗi tập trung
         return ResponseEntity
                 .status(code.getStatusCode())
                 .body(response);
-
-
     }
 
     @ExceptionHandler(value = RuntimeException.class)

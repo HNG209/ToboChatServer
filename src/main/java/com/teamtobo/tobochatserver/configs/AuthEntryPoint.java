@@ -1,8 +1,8 @@
-package iuh.fit.se.configs;
+package com.teamtobo.tobochatserver.configs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import iuh.fit.se.dtos.response.ApiResponse;
-import iuh.fit.se.exception.ErrorCode;
+import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
