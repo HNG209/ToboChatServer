@@ -1,20 +1,21 @@
-package com.teamtobo.tobochatserver.entity;
+package com.teamtobo.tobochatserver.entities;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortKey;
 
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @DynamoDbBean
-public class ChatEntity { // Single Tale (Dùng chung cho tất cả Entity)
+public abstract class BaseEntity { // Single Tale (Dùng chung cho tất cả Entity)
 
     // Partition Key: Khoá phân vùng
     private String pk;
@@ -24,11 +25,6 @@ public class ChatEntity { // Single Tale (Dùng chung cho tất cả Entity)
 
     // Loại entity (USER, MSG...)
     private String entityType;
-
-    private String data;
-
-    private String senderId;
-    private String timestamp;
 
     @DynamoDbPartitionKey
     @DynamoDbAttribute("pk")

@@ -1,9 +1,12 @@
 package com.teamtobo.tobochatserver.configs;
 
+import com.teamtobo.tobochatserver.entities.UserEntity;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
@@ -16,6 +19,11 @@ public class DynamoDbConfig {
                 .region(Region.AP_SOUTHEAST_1)
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
+    }
+
+    @Bean
+    public DynamoDbTable<UserEntity> userTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(UserEntity.class));
     }
 
     @Bean
