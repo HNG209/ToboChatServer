@@ -31,6 +31,7 @@ public enum ErrorCode {
     UNAUTHENTICATED(4004, "[4004] Unauthenticated", HttpStatus.UNAUTHORIZED),
     REFRESH_TOKEN_MISSING(4005, "[4005] Refresh token missing", HttpStatus.BAD_REQUEST),
     UNAUTHORIZED(4003, "[4003] Access denied", HttpStatus.FORBIDDEN),
+    UPLOAD_ERROR(4099, "[4099] Error uploading file", HttpStatus.INTERNAL_SERVER_ERROR),
     //    INVALID_DOB(3003, "[3003] Invalid date of birth", HttpStatus.BAD_REQUEST),
     CUSTOMER_NOT_FOUND(4001, "[4001] Customer not found", HttpStatus.NOT_FOUND),
     PRODUCT_NOT_FOUND(4002, "[4002] Product not found", HttpStatus.NOT_FOUND),

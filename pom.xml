@@ -46,6 +46,18 @@
             <artifactId>dynamodb-enhanced</artifactId>
         </dependency>
 
+<!--        AWS Cognito-->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cognitoidentityprovider</artifactId>
+        </dependency>
+
+<!--        AWS S3-->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+
 <!--        Spring web (RESTful API)-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
