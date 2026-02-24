@@ -64,6 +64,13 @@
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
+<!--        Socket.io-->
+        <dependency>
+            <groupId>com.corundumstudio.socketio</groupId>
+            <artifactId>netty-socketio</artifactId>
+            <version>2.0.9</version>
+        </dependency>
+
 <!--        Validation-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
