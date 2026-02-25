@@ -17,7 +17,7 @@ public class DynamoDbConfig {
     public DynamoDbClient dynamoDbClient() {
         // Tự động lấy credential trong máy (.aws/credentials) hoặc biến môi trường
         return DynamoDbClient.builder()
-                .region(Region.AP_SOUTHEAST_1)
+                .region(Region.AP_SOUTHEAST_2)
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
     }

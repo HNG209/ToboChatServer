@@ -87,12 +87,42 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void sendFriendRequest(String userId, String otherId) {
+        // 0. Kiểm tra không thể gửi lời mời kết bạn cho chính mình
+        if (userId.equals(otherId)) {
+            throw new AppException(ErrorCode.CANNOT_ADD_SELF);
+        }
+
         // 1. Kiểm tra người được gửi lời mời có tồn tại để lấy fullName của họ
         UserEntity other = getUserProfile(otherId);
 
-        // TODO: Thêm kiểm tra Friend Request đã có chưa và kiểm tra đã là bạn chưa
+        // 2. Kiểm tra đã là bạn chưa
+        FriendEntity existingFriend = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("FRIEND#" + otherId)
+                .build());
+        if (existingFriend != null) {
+            throw new AppException(ErrorCode.ALREADY_FRIENDS);
+        }
 
-        // 2. Tạo friend request
+        // 3. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
+        FriendEntity existingRequest = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build());
+        if (existingRequest != null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
+        }
+
+        // 4. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
+        FriendEntity incomingRequest = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + otherId)
+                .sortValue("REQUEST#" + userId)
+                .build());
+        if (incomingRequest != null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
+        }
+
+        // 5. Tạo friend request
         FriendEntity friendRequest = FriendEntity.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
