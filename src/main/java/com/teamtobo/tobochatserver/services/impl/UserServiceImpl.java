@@ -132,7 +132,20 @@ public class UserServiceImpl implements UserService {
         friendTable.putItem(friendRequest);
     }
 
-    // TODO: Thêm cancelFriendRequest
+    @Override
+    public void cancelFriendRequest(String userId, String otherId) {
+        Key requestKey = Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build();
+
+        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        if (existingRequest == null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
+        }
+
+        friendTable.deleteItem(requestKey);
+    }
 
     @Override
     public void responseFriendRequest(String userId, FriendAcceptRequest request) {
@@ -143,6 +156,10 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         // TODO: Kiểm tra request có tồn tại không
+        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        if (existingRequest == null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
+        }
 
         if (!request.isAccepted()) {
             // Trường hợp từ chối: Chỉ cần xóa yêu cầu, thay bằng cancelFriendRequest

@@ -56,6 +56,16 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/friends/request/{otherId}")
+    public ResponseEntity<Void> cancelFriendRequest(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String otherId) {
+        String userId = jwt.getSubject();
+
+        userService.cancelFriendRequest(userId, otherId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/friends")
     public ResponseEntity<Void> responseFriendRequest(
             @AuthenticationPrincipal Jwt jwt,
