@@ -24,4 +24,5 @@ public class FriendEntity extends BaseEntity{
     String gsi1sk;
 
 
+
 }

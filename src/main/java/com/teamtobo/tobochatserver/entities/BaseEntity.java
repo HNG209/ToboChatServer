@@ -5,10 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttribute;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
 @Data
 @SuperBuilder
@@ -27,10 +24,12 @@ public abstract class BaseEntity { // Single Tale (Dùng chung cho tất cả En
     private String entityType;
 
     @DynamoDbPartitionKey
+    @DynamoDbSecondarySortKey(indexNames = "GSI_FriendRequest")
     @DynamoDbAttribute("pk")
     public String getPk() { return pk; }
 
     @DynamoDbSortKey
+    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_FriendRequest")
     @DynamoDbAttribute("sk")
     public String getSk() { return sk; }
 }

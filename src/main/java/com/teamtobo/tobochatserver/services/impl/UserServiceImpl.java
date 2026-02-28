@@ -31,6 +31,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -134,8 +135,8 @@ public class UserServiceImpl implements UserService {
         FriendEntity friendRequest = FriendEntity.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
-                .gsi1pk("USER#" + userId)
-                .gsi1sk("REQUEST#" + otherId)
+                .gsi1pk("REQUEST#" + otherId)
+                .gsi1sk("USER#" + userId)
                 .name(other.getName())
                 .build();
 
@@ -361,7 +362,6 @@ public class UserServiceImpl implements UserService {
     }
 
 
-    //Chưa dc
     @Override
     public PageResponse<FriendEntity> getPendingRequestList(
             String userId,
@@ -369,34 +369,35 @@ public class UserServiceImpl implements UserService {
             int limit
     ) {
 
-        String gsiPk = "REQUEST#" + userId;
+        String gsiPartitionKey = "REQUEST#" + userId;
 
         DynamoDbIndex<FriendEntity> index =
                 friendTable.index("GSI_FriendRequest");
 
-        QueryEnhancedRequest.Builder requestBuilder =
+        QueryEnhancedRequest.Builder builder =
                 QueryEnhancedRequest.builder()
                         .queryConditional(
                                 QueryConditional.keyEqualTo(
                                         Key.builder()
-                                                .partitionValue(gsiPk)
+                                                .partitionValue(gsiPartitionKey)
                                                 .build()
                                 )
                         )
                         .limit(limit);
 
+        // Pagination
         if (cursor != null) {
             Map<String, AttributeValue> exclusiveStartKey =
                     Map.of(
-                            "gsi1pk", AttributeValue.builder().s(gsiPk).build(),
+                            "gsi1pk", AttributeValue.builder().s(gsiPartitionKey).build(),
                             "gsi1sk", AttributeValue.builder().s(cursor).build()
                     );
 
-            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+            builder.exclusiveStartKey(exclusiveStartKey);
         }
 
         Page<FriendEntity> page = index
-                .query(requestBuilder.build())
+                .query(builder.build())
                 .stream()
                 .findFirst()
                 .orElse(null);
@@ -409,10 +410,13 @@ public class UserServiceImpl implements UserService {
         }
 
         String nextCursor = null;
+
         if (page.lastEvaluatedKey() != null &&
                 page.lastEvaluatedKey().get("gsi1sk") != null) {
 
-            nextCursor = page.lastEvaluatedKey().get("gsi1sk").s();
+            nextCursor = page.lastEvaluatedKey()
+                    .get("gsi1sk")
+                    .s();
         }
 
         return PageResponse.<FriendEntity>builder()
@@ -420,5 +424,9 @@ public class UserServiceImpl implements UserService {
                 .nextCursor(nextCursor)
                 .build();
     }
+
+
+
+
 
 }
