@@ -1,15 +1,19 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
+import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
@@ -20,12 +24,16 @@ import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
     private final DynamoDbTable<UserEntity> userTable;
+    private final DynamoDbTable<FriendEntity> friendTable;
+    private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
     private final S3Client s3Client;
 
@@ -75,6 +83,119 @@ public class UserServiceImpl implements UserService {
         }
 
         return user;
+    }
+
+    @Override
+    public void sendFriendRequest(String userId, String otherId) {
+        // 0. Kiểm tra không thể gửi lời mời kết bạn cho chính mình
+        if (userId.equals(otherId)) {
+            throw new AppException(ErrorCode.CANNOT_ADD_SELF);
+        }
+
+        // 1. Kiểm tra người được gửi lời mời có tồn tại để lấy fullName của họ
+        UserEntity other = getUserProfile(otherId);
+
+        // 2. Kiểm tra đã là bạn chưa
+        FriendEntity existingFriend = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("FRIEND#" + otherId)
+                .build());
+        if (existingFriend != null) {
+            throw new AppException(ErrorCode.ALREADY_FRIENDS);
+        }
+
+        // 3. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
+        FriendEntity existingRequest = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build());
+        if (existingRequest != null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
+        }
+
+        // 4. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
+        FriendEntity incomingRequest = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + otherId)
+                .sortValue("REQUEST#" + userId)
+                .build());
+        if (incomingRequest != null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
+        }
+
+        // 5. Tạo friend request
+        FriendEntity friendRequest = FriendEntity.builder()
+                .pk("USER#" + userId)
+                .sk("REQUEST#" + otherId)
+                .name(other.getName())
+                .build();
+
+        friendTable.putItem(friendRequest);
+    }
+
+    @Override
+    public void cancelFriendRequest(String userId, String otherId) {
+        Key requestKey = Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build();
+
+        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        if (existingRequest == null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
+        }
+
+        friendTable.deleteItem(requestKey);
+    }
+
+    @Override
+    public void responseFriendRequest(String userId, FriendAcceptRequest request) {
+        // 1. Định nghĩa các khóa để xác định bản ghi Request cũ
+        Key requestKey = Key.builder()
+                .partitionValue("USER#" + request.getFromUser())
+                .sortValue("REQUEST#" + userId)
+                .build();
+
+        // TODO: Kiểm tra request có tồn tại không
+        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        if (existingRequest == null) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
+        }
+
+        if (!request.isAccepted()) {
+            // Trường hợp từ chối: Chỉ cần xóa yêu cầu, thay bằng cancelFriendRequest
+            friendTable.deleteItem(requestKey);
+            return;
+        }
+
+        // 2. Trường hợp chấp nhận: Cần lấy Profile của cả 2 để Denormalize tên
+        UserEntity currentUser = getUserProfile(userId);
+        UserEntity senderUser = getUserProfile(request.getFromUser());
+
+        if (currentUser == null || senderUser == null) return;
+
+        // 3. Thực hiện Transaction
+        String now = Instant.now().toString();
+
+        enhancedClient.transactWriteItems(b -> b
+                // Xóa bản ghi Request
+                .addDeleteItem(friendTable, requestKey)
+
+                // Thêm bạn cho User hiện tại (userId)
+                .addPutItem(friendTable, FriendEntity.builder()
+                        .pk("USER#" + userId)
+                        .sk("FRIEND#" + request.getFromUser())
+                        .name(senderUser.getName())
+                        .addedAt(now)
+                        .build())
+
+                // Thêm bạn cho người gửi (fromUser)
+                .addPutItem(friendTable, FriendEntity.builder()
+                        .pk("USER#" + request.getFromUser())
+                        .sk("FRIEND#" + userId)
+                        .name(currentUser.getName())
+                        .addedAt(now)
+                        .build())
+        );
     }
 
     private String uploadFileToS3(String userId, MultipartFile file) {

@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
@@ -43,5 +44,35 @@ public class UserController {
                 .avatar(avatar)
                 .build());
         return ResponseEntity.ok(updatedUser);
+    }
+
+    @PostMapping("/friends/{otherId}")
+    public ResponseEntity<Void> sendFriendRequest(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String otherId) {
+        String userId = jwt.getSubject(); // sender
+
+        userService.sendFriendRequest(userId, otherId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/friends/request/{otherId}")
+    public ResponseEntity<Void> cancelFriendRequest(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String otherId) {
+        String userId = jwt.getSubject();
+
+        userService.cancelFriendRequest(userId, otherId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/friends")
+    public ResponseEntity<Void> responseFriendRequest(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody FriendAcceptRequest request) {
+        String userId = jwt.getSubject(); // receiver
+
+        userService.responseFriendRequest(userId, request);
+        return ResponseEntity.noContent().build();
     }
 }
