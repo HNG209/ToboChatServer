@@ -3,6 +3,8 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.services.UserService;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -74,5 +77,51 @@ public class UserController {
 
         userService.responseFriendRequest(userId, request);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/friendslist")
+    public ApiResponse<PageResponse<FriendEntity>> getFriendList(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+
+        String userId = jwt.getSubject();
+
+        return ApiResponse.<PageResponse<FriendEntity>>builder()
+                .result(userService.getFriendList(userId, cursor, limit))
+                .build();
+    }
+
+    @GetMapping("/friend-requests")
+    public ApiResponse<PageResponse<FriendEntity>> getFriendRequestList(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+
+        return ApiResponse.<PageResponse<FriendEntity>>builder()
+                .result(userService.getFriendRequestList(
+                        jwt.getSubject(),
+                        cursor,
+                        limit
+                ))
+                .build();
+    }
+
+    @GetMapping("/pending-requests")
+    public ApiResponse<PageResponse<FriendEntity>> getPendingRequestList(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+
+        return ApiResponse.<PageResponse<FriendEntity>>builder()
+                .result(userService.getPendingRequestList(
+                        jwt.getSubject(),
+                        cursor,
+                        limit
+                ))
+                .build();
     }
 }

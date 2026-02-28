@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -14,17 +15,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminUpdateUserAttributesRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -126,6 +134,8 @@ public class UserServiceImpl implements UserService {
         FriendEntity friendRequest = FriendEntity.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
+                .gsi1pk("USER#" + userId)
+                .gsi1sk("REQUEST#" + otherId)
                 .name(other.getName())
                 .build();
 
@@ -198,6 +208,8 @@ public class UserServiceImpl implements UserService {
         );
     }
 
+
+
     private String uploadFileToS3(String userId, MultipartFile file) {
         // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
         String fileName = "users/" + userId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
@@ -232,4 +244,181 @@ public class UserServiceImpl implements UserService {
                 .build();
         cognitoClient.adminUpdateUserAttributes(request);
     }
+
+    @Override
+    public PageResponse<FriendEntity> getFriendList(
+            String userId,
+            String cursor,
+            int limit
+    ) {
+
+        String pk = "USER#" + userId;
+
+        QueryEnhancedRequest.Builder requestBuilder =
+                QueryEnhancedRequest.builder()
+                        .queryConditional(
+                                QueryConditional.sortBeginsWith(
+                                        Key.builder()
+                                                .partitionValue(pk)
+                                                .sortValue("FRIEND#")
+                                                .build()
+                                )
+                        )
+                        .limit(limit);
+
+        // Nếu có cursor thì set ExclusiveStartKey
+        if (cursor != null) {
+            Map<String, AttributeValue> exclusiveStartKey =
+                    Map.of(
+                            "pk", AttributeValue.builder().s(pk).build(),
+                            "sk", AttributeValue.builder().s(cursor).build()
+                    );
+
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<FriendEntity> page = friendTable
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<FriendEntity>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null &&
+                page.lastEvaluatedKey().get("sk") != null) {
+
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(page.items())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+    @Override
+    public PageResponse<FriendEntity> getFriendRequestList(
+            String userId,
+            String cursor,
+            int limit
+    ) {
+
+        String pk = "USER#" + userId;
+
+        QueryEnhancedRequest.Builder requestBuilder =
+                QueryEnhancedRequest.builder()
+                        .queryConditional(
+                                QueryConditional.sortBeginsWith(
+                                        Key.builder()
+                                                .partitionValue(pk)
+                                                .sortValue("REQUEST#")
+                                                .build()
+                                )
+                        )
+                        .limit(limit);
+
+        if (cursor != null) {
+            Map<String, AttributeValue> exclusiveStartKey =
+                    Map.of(
+                            "pk", AttributeValue.builder().s(pk).build(),
+                            "sk", AttributeValue.builder().s(cursor).build()
+                    );
+
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<FriendEntity> page = friendTable
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<FriendEntity>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null &&
+                page.lastEvaluatedKey().get("sk") != null) {
+
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(page.items())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+
+    //Chưa dc
+    @Override
+    public PageResponse<FriendEntity> getPendingRequestList(
+            String userId,
+            String cursor,
+            int limit
+    ) {
+
+        String gsiPk = "REQUEST#" + userId;
+
+        DynamoDbIndex<FriendEntity> index =
+                friendTable.index("GSI_FriendRequest");
+
+        QueryEnhancedRequest.Builder requestBuilder =
+                QueryEnhancedRequest.builder()
+                        .queryConditional(
+                                QueryConditional.keyEqualTo(
+                                        Key.builder()
+                                                .partitionValue(gsiPk)
+                                                .build()
+                                )
+                        )
+                        .limit(limit);
+
+        if (cursor != null) {
+            Map<String, AttributeValue> exclusiveStartKey =
+                    Map.of(
+                            "gsi1pk", AttributeValue.builder().s(gsiPk).build(),
+                            "gsi1sk", AttributeValue.builder().s(cursor).build()
+                    );
+
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<FriendEntity> page = index
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<FriendEntity>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null &&
+                page.lastEvaluatedKey().get("gsi1sk") != null) {
+
+            nextCursor = page.lastEvaluatedKey().get("gsi1sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(page.items())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
 }
