@@ -96,7 +96,6 @@ public class UserServiceImpl implements UserService {
 
         // 4. Lưu ngược lại DynamoDB
         if (isChanged) {
-//            user.setUpdatedAt(java.time.Instant.now().toString());
             userTable.updateItem(user);
         }
 
@@ -215,7 +214,6 @@ public class UserServiceImpl implements UserService {
                         .build())
         );
     }
-
 
     private String uploadFileToS3(String userId, MultipartFile file) {
         // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
@@ -411,7 +409,9 @@ public class UserServiceImpl implements UserService {
                 .items(firstPage.items())
                 .nextCursor(nextCursor)
                 .build();
-    public MfaInitResponse initEnableMFA (String userId, String password) {
+    }
+
+    public MfaInitResponse initEnableMFA(String userId, String password) {
         // 1. Verify password + lấy accessToken
         Map<String, String> authParams = new HashMap<>();
         authParams.put("USERNAME", userId);

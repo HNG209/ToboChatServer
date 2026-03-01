@@ -31,7 +31,10 @@ public interface UserService {
             String cursor,
             int limit
     );
+
     MfaInitResponse initEnableMFA(String userId, String password);
+
     void confirmEnableMFA(String userId, String otp);
+
     void disableMFA(String userId, String password);
 }

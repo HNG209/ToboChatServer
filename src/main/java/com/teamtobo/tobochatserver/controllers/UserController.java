@@ -1,6 +1,5 @@
 package com.teamtobo.tobochatserver.controllers;
 
-import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaConfirmRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
@@ -19,11 +18,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 
 @Tag(name = "User", description = "APIs quản lý người dùng")
 @RestController
