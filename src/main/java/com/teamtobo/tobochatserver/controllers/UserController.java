@@ -5,9 +5,13 @@ import com.teamtobo.tobochatserver.dtos.request.MfaConfirmRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.services.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,15 +19,20 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
+@Tag(name = "User", description = "APIs quản lý người dùng")
 @RestController
 @RequestMapping("/users")
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
 
+    @Operation(summary = "Thông tin người dùng hiện tại")
     @GetMapping("/me")
     public ApiResponse<UserEntity> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getSubject();
@@ -34,7 +43,8 @@ public class UserController {
                 .build();
     }
 
-    @PutMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Cập nhật thông tin người dùng hiện tại")
+    @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UserEntity> updateProfile(
             @AuthenticationPrincipal Jwt jwt,
             @RequestPart(value = "name", required = false) String name,
@@ -49,34 +59,19 @@ public class UserController {
         return ResponseEntity.ok(updatedUser);
     }
 
-    @PostMapping("/friends/{otherId}")
-    public ResponseEntity<Void> sendFriendRequest(
+    @Operation(summary = "Danh sách bạn bè của người dùng hiện tại")
+    @GetMapping("/me/friends")
+    public ApiResponse<PageResponse<FriendEntity>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String otherId) {
-        String userId = jwt.getSubject(); // sender
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
 
-        userService.sendFriendRequest(userId, otherId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @DeleteMapping("/friends/request/{otherId}")
-    public ResponseEntity<Void> cancelFriendRequest(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String otherId) {
         String userId = jwt.getSubject();
 
-        userService.cancelFriendRequest(userId, otherId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PutMapping("/friends")
-    public ResponseEntity<Void> responseFriendRequest(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestBody FriendAcceptRequest request) {
-        String userId = jwt.getSubject(); // receiver
-
-        userService.responseFriendRequest(userId, request);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<PageResponse<FriendEntity>>builder()
+                .result(userService.getFriends(userId, cursor, limit))
+                .build();
     }
 
     @PostMapping("/mfa/init")

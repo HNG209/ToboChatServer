@@ -2,9 +2,11 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
+import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -13,11 +15,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminUpdateUserAttributesRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
@@ -25,6 +35,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -133,6 +144,8 @@ public class UserServiceImpl implements UserService {
         FriendEntity friendRequest = FriendEntity.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
+                .gsi1pk("REQUEST#" + otherId)
+                .gsi1sk("USER#" + userId)
                 .name(other.getName())
                 .build();
 
@@ -156,31 +169,29 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void responseFriendRequest(String userId, FriendAcceptRequest request) {
-        // 1. Định nghĩa các khóa để xác định bản ghi Request cũ
+        // Định nghĩa các khóa để xác định Request cũ
         Key requestKey = Key.builder()
                 .partitionValue("USER#" + request.getFromUser())
                 .sortValue("REQUEST#" + userId)
                 .build();
 
-        // TODO: Kiểm tra request có tồn tại không
+        // Kiểm tra request có tồn tại không
         FriendEntity existingRequest = friendTable.getItem(requestKey);
         if (existingRequest == null) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
         }
 
         if (!request.isAccepted()) {
-            // Trường hợp từ chối: Chỉ cần xóa yêu cầu, thay bằng cancelFriendRequest
+            // Xóa yêu cầu nếu từ chối
             friendTable.deleteItem(requestKey);
             return;
         }
 
-        // 2. Trường hợp chấp nhận: Cần lấy Profile của cả 2 để Denormalize tên
         UserEntity currentUser = getUserProfile(userId);
         UserEntity senderUser = getUserProfile(request.getFromUser());
 
         if (currentUser == null || senderUser == null) return;
 
-        // 3. Thực hiện Transaction
         String now = Instant.now().toString();
 
         enhancedClient.transactWriteItems(b -> b
@@ -204,6 +215,7 @@ public class UserServiceImpl implements UserService {
                         .build())
         );
     }
+
 
     private String uploadFileToS3(String userId, MultipartFile file) {
         // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
@@ -241,6 +253,164 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public PageResponse<FriendEntity> getFriends(
+            String userId,
+            String cursor,
+            int limit
+    ) {
+
+        String pk = "USER#" + userId;
+
+        QueryEnhancedRequest.Builder requestBuilder =
+                QueryEnhancedRequest.builder()
+                        .queryConditional(
+                                QueryConditional.sortBeginsWith(
+                                        Key.builder()
+                                                .partitionValue(pk)
+                                                .sortValue("FRIEND#")
+                                                .build()
+                                )
+                        )
+                        .limit(limit);
+
+        // Nếu có cursor thì set ExclusiveStartKey
+        if (cursor != null) {
+            Map<String, AttributeValue> exclusiveStartKey =
+                    Map.of(
+                            "pk", AttributeValue.builder().s(pk).build(),
+                            "sk", AttributeValue.builder().s(cursor).build()
+                    );
+
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<FriendEntity> page = friendTable
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<FriendEntity>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null &&
+                page.lastEvaluatedKey().get("sk") != null) {
+
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(page.items())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+    @Override
+    public PageResponse<FriendEntity> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
+        return switch (type) {
+            case SENT -> getSentRequests(userId, cursor, limit);
+            case PENDING -> getPendingRequests(userId, cursor, limit);
+        };
+    }
+
+    private PageResponse<FriendEntity> getSentRequests(
+            String userId,
+            String cursor,
+            int limit
+    ) {
+
+        String pk = "USER#" + userId;
+
+        QueryEnhancedRequest.Builder requestBuilder =
+                QueryEnhancedRequest.builder()
+                        .queryConditional(
+                                QueryConditional.sortBeginsWith(
+                                        Key.builder()
+                                                .partitionValue(pk)
+                                                .sortValue("REQUEST#")
+                                                .build()
+                                )
+                        )
+                        .limit(limit);
+
+        if (cursor != null) {
+            Map<String, AttributeValue> exclusiveStartKey =
+                    Map.of(
+                            "pk", AttributeValue.builder().s(pk).build(),
+                            "sk", AttributeValue.builder().s(cursor).build()
+                    );
+
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<FriendEntity> page = friendTable
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<FriendEntity>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null &&
+                page.lastEvaluatedKey().get("sk") != null) {
+
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(page.items())
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+    private PageResponse<FriendEntity> getPendingRequests(String userId, String cursor, int limit) {
+        String gsiPartitionKey = "REQUEST#" + userId;
+        DynamoDbIndex<FriendEntity> index = friendTable.index("GSI_FriendRequest");
+
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
+                .limit(limit);
+
+        // Xử lý Pagination Cursor (Giả sử cursor là ID người gửi - gsi1sk)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("gsi1pk", AttributeValue.builder().s(gsiPartitionKey).build());
+            exclusiveStartKey.put("gsi1sk", AttributeValue.builder().s(cursor).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s("USER#" + cursor.replace("USER#", "")).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // Thực thi Query trên Index
+        SdkIterable<Page<FriendEntity>> results = index.query(builder.build());
+        Page<FriendEntity> firstPage = results.iterator().next(); // Lấy trang đầu tiên
+
+        if (firstPage == null || firstPage.items().isEmpty()) {
+            return PageResponse.<FriendEntity>builder().items(List.of()).build();
+        }
+
+        // Lấy cursor cho trang tiếp theo
+        String nextCursor = null;
+        if (firstPage.lastEvaluatedKey() != null) {
+            nextCursor = firstPage.lastEvaluatedKey().get("gsi1sk").s();
+        }
+
+        return PageResponse.<FriendEntity>builder()
+                .items(firstPage.items())
+                .nextCursor(nextCursor)
+                .build();
     public MfaInitResponse initEnableMFA (String userId, String password) {
         // 1. Verify password + lấy accessToken
         Map<String, String> authParams = new HashMap<>();
