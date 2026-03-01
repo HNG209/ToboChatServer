@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
+import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -158,31 +159,29 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void responseFriendRequest(String userId, FriendAcceptRequest request) {
-        // 1. Định nghĩa các khóa để xác định bản ghi Request cũ
+        // Định nghĩa các khóa để xác định Request cũ
         Key requestKey = Key.builder()
                 .partitionValue("USER#" + request.getFromUser())
                 .sortValue("REQUEST#" + userId)
                 .build();
 
-        // TODO: Kiểm tra request có tồn tại không
+        // Kiểm tra request có tồn tại không
         FriendEntity existingRequest = friendTable.getItem(requestKey);
         if (existingRequest == null) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
         }
 
         if (!request.isAccepted()) {
-            // Trường hợp từ chối: Chỉ cần xóa yêu cầu, thay bằng cancelFriendRequest
+            // Xóa yêu cầu nếu từ chối
             friendTable.deleteItem(requestKey);
             return;
         }
 
-        // 2. Trường hợp chấp nhận: Cần lấy Profile của cả 2 để Denormalize tên
         UserEntity currentUser = getUserProfile(userId);
         UserEntity senderUser = getUserProfile(request.getFromUser());
 
         if (currentUser == null || senderUser == null) return;
 
-        // 3. Thực hiện Transaction
         String now = Instant.now().toString();
 
         enhancedClient.transactWriteItems(b -> b
@@ -206,7 +205,6 @@ public class UserServiceImpl implements UserService {
                         .build())
         );
     }
-
 
 
     private String uploadFileToS3(String userId, MultipartFile file) {
@@ -245,7 +243,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public PageResponse<FriendEntity> getFriendList(
+    public PageResponse<FriendEntity> getFriends(
             String userId,
             String cursor,
             int limit
@@ -303,7 +301,14 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public PageResponse<FriendEntity> getFriendRequestList(
+    public PageResponse<FriendEntity> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
+        return switch (type) {
+            case SENT -> getSentRequests(userId, cursor, limit);
+            case PENDING -> getPendingRequests(userId, cursor, limit);
+        };
+    }
+
+    private PageResponse<FriendEntity> getSentRequests(
             String userId,
             String cursor,
             int limit
@@ -359,9 +364,7 @@ public class UserServiceImpl implements UserService {
                 .build();
     }
 
-
-    @Override
-    public PageResponse<FriendEntity> getPendingRequestList(String userId, String cursor, int limit) {
+    private PageResponse<FriendEntity> getPendingRequests(String userId, String cursor, int limit) {
         String gsiPartitionKey = "REQUEST#" + userId;
         DynamoDbIndex<FriendEntity> index = friendTable.index("GSI_FriendRequest");
 

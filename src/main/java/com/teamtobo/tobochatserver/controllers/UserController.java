@@ -7,6 +7,8 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.services.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,12 +22,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@Tag(name = "User", description = "APIs quản lý người dùng")
 @RestController
 @RequestMapping("/users")
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
 
+    @Operation(summary = "Thông tin người dùng hiện tại")
     @GetMapping("/me")
     public ApiResponse<UserEntity> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getSubject();
@@ -36,7 +40,8 @@ public class UserController {
                 .build();
     }
 
-    @PutMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Cập nhật thông tin người dùng hiện tại")
+    @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UserEntity> updateProfile(
             @AuthenticationPrincipal Jwt jwt,
             @RequestPart(value = "name", required = false) String name,
@@ -51,36 +56,7 @@ public class UserController {
         return ResponseEntity.ok(updatedUser);
     }
 
-    @PostMapping("/friends/{otherId}")
-    public ResponseEntity<Void> sendFriendRequest(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String otherId) {
-        String userId = jwt.getSubject(); // sender
-
-        userService.sendFriendRequest(userId, otherId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @DeleteMapping("/friends/request/{otherId}")
-    public ResponseEntity<Void> cancelFriendRequest(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String otherId) {
-        String userId = jwt.getSubject();
-
-        userService.cancelFriendRequest(userId, otherId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PutMapping("/friends")
-    public ResponseEntity<Void> responseFriendRequest(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestBody FriendAcceptRequest request) {
-        String userId = jwt.getSubject(); // receiver
-
-        userService.responseFriendRequest(userId, request);
-        return ResponseEntity.noContent().build();
-    }
-
+    @Operation(summary = "Danh sách bạn bè của người dùng hiện tại")
     @GetMapping("/me/friends")
     public ApiResponse<PageResponse<FriendEntity>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
@@ -91,51 +67,7 @@ public class UserController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<FriendEntity>>builder()
-                .result(userService.getFriendList(userId, cursor, limit))
+                .result(userService.getFriends(userId, cursor, limit))
                 .build();
     }
-
-    @GetMapping("/me/friend-requests")
-    public ApiResponse<PageResponse<FriendEntity>> getFriendRequestList(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "10") int limit
-    ) {
-
-        return ApiResponse.<PageResponse<FriendEntity>>builder()
-                .result(userService.getFriendRequestList(
-                        jwt.getSubject(),
-                        cursor,
-                        limit
-                ))
-                .build();
-    }
-
-    @GetMapping("/me/pending-requests")
-    public ApiResponse<PageResponse<FriendEntity>> getPendingRequestList(
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "10") int limit
-    ) {
-
-        return ApiResponse.<PageResponse<FriendEntity>>builder()
-                .result(userService.getPendingRequestList(
-                        jwt.getSubject(),
-                        cursor,
-                        limit
-                ))
-                .build();
-    }
-
-
-
-
-
-
-
-
-
-
-
-
 }
