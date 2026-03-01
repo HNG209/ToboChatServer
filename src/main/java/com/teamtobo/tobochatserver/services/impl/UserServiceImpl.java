@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
@@ -31,10 +32,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @Slf4j
@@ -363,70 +361,42 @@ public class UserServiceImpl implements UserService {
 
 
     @Override
-    public PageResponse<FriendEntity> getPendingRequestList(
-            String userId,
-            String cursor,
-            int limit
-    ) {
-
+    public PageResponse<FriendEntity> getPendingRequestList(String userId, String cursor, int limit) {
         String gsiPartitionKey = "REQUEST#" + userId;
+        DynamoDbIndex<FriendEntity> index = friendTable.index("GSI_FriendRequest");
 
-        DynamoDbIndex<FriendEntity> index =
-                friendTable.index("GSI_FriendRequest");
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
+                .limit(limit);
 
-        QueryEnhancedRequest.Builder builder =
-                QueryEnhancedRequest.builder()
-                        .queryConditional(
-                                QueryConditional.keyEqualTo(
-                                        Key.builder()
-                                                .partitionValue(gsiPartitionKey)
-                                                .build()
-                                )
-                        )
-                        .limit(limit);
-
-        // Pagination
-        if (cursor != null) {
-            Map<String, AttributeValue> exclusiveStartKey =
-                    Map.of(
-                            "gsi1pk", AttributeValue.builder().s(gsiPartitionKey).build(),
-                            "gsi1sk", AttributeValue.builder().s(cursor).build()
-                    );
+        // Xử lý Pagination Cursor (Giả sử cursor là ID người gửi - gsi1sk)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("gsi1pk", AttributeValue.builder().s(gsiPartitionKey).build());
+            exclusiveStartKey.put("gsi1sk", AttributeValue.builder().s(cursor).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s("USER#" + cursor.replace("USER#", "")).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
 
             builder.exclusiveStartKey(exclusiveStartKey);
         }
 
-        Page<FriendEntity> page = index
-                .query(builder.build())
-                .stream()
-                .findFirst()
-                .orElse(null);
+        // Thực thi Query trên Index
+        SdkIterable<Page<FriendEntity>> results = index.query(builder.build());
+        Page<FriendEntity> firstPage = results.iterator().next(); // Lấy trang đầu tiên
 
-        if (page == null) {
-            return PageResponse.<FriendEntity>builder()
-                    .items(List.of())
-                    .nextCursor(null)
-                    .build();
+        if (firstPage == null || firstPage.items().isEmpty()) {
+            return PageResponse.<FriendEntity>builder().items(List.of()).build();
         }
 
+        // Lấy cursor cho trang tiếp theo
         String nextCursor = null;
-
-        if (page.lastEvaluatedKey() != null &&
-                page.lastEvaluatedKey().get("gsi1sk") != null) {
-
-            nextCursor = page.lastEvaluatedKey()
-                    .get("gsi1sk")
-                    .s();
+        if (firstPage.lastEvaluatedKey() != null) {
+            nextCursor = firstPage.lastEvaluatedKey().get("gsi1sk").s();
         }
 
         return PageResponse.<FriendEntity>builder()
-                .items(page.items())
+                .items(firstPage.items())
                 .nextCursor(nextCursor)
                 .build();
     }
-
-
-
-
-
 }

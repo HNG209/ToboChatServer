@@ -81,8 +81,8 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/friendslist")
-    public ApiResponse<PageResponse<FriendEntity>> getFriendList(
+    @GetMapping("/me/friends")
+    public ApiResponse<PageResponse<FriendEntity>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
@@ -95,7 +95,7 @@ public class UserController {
                 .build();
     }
 
-    @GetMapping("/friend-requests")
+    @GetMapping("/me/friend-requests")
     public ApiResponse<PageResponse<FriendEntity>> getFriendRequestList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor,
@@ -111,7 +111,7 @@ public class UserController {
                 .build();
     }
 
-    @GetMapping("/pending-requests")
+    @GetMapping("/me/pending-requests")
     public ApiResponse<PageResponse<FriendEntity>> getPendingRequestList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor,
