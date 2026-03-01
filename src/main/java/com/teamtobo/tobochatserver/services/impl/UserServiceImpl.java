@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
@@ -27,6 +28,7 @@ import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityPr
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminUpdateUserAttributesRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -34,6 +36,10 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -44,9 +50,13 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
     private final S3Client s3Client;
+    private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
 
     @Value("${aws.cognito.userPoolId}")
     private String userPoolId;
+
+    @Value("${aws.cognito.appClientId}")
+    private String appClientId;
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
@@ -401,5 +411,100 @@ public class UserServiceImpl implements UserService {
                 .items(firstPage.items())
                 .nextCursor(nextCursor)
                 .build();
+    public MfaInitResponse initEnableMFA (String userId, String password) {
+        // 1. Verify password + lấy accessToken
+        Map<String, String> authParams = new HashMap<>();
+        authParams.put("USERNAME", userId);
+        authParams.put("PASSWORD", password);
+
+        AdminInitiateAuthResponse authResponse =
+                cognitoClient.adminInitiateAuth(
+                        AdminInitiateAuthRequest.builder()
+                                .userPoolId(userPoolId)
+                                .clientId(appClientId)
+                                .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+                                .authParameters(authParams)
+                                .build()
+                );
+
+        String accessToken = authResponse.authenticationResult().accessToken();
+
+        // 2. Associate software token (TOTP)
+        AssociateSoftwareTokenResponse associateSoftwareTokenResponse =
+                cognitoClient.associateSoftwareToken(
+                        AssociateSoftwareTokenRequest.builder()
+                                .accessToken(accessToken)
+                                .build()
+                );
+
+        String secretCode = associateSoftwareTokenResponse.secretCode();
+        mfaCache.put(userId, accessToken);
+        return new MfaInitResponse(secretCode);
+    }
+
+    @Override
+    public void confirmEnableMFA(String userId, String otp) {
+        // 1. Lấy lại accessToken đã lưu tạm
+        String accessToken = mfaCache.get(userId);
+
+        if (accessToken == null) {
+            throw new RuntimeException("MFA session expired");
+        }
+
+        // 2. Verify OTP
+        cognitoClient.verifySoftwareToken(
+                VerifySoftwareTokenRequest.builder()
+                        .accessToken(accessToken)
+                        .userCode(otp)
+                        .build()
+        );
+
+        // 3. Set MFA preference
+        cognitoClient.adminSetUserMFAPreference(
+                AdminSetUserMfaPreferenceRequest.builder()
+                        .userPoolId(userPoolId)
+                        .username(userId)
+                        .softwareTokenMfaSettings(
+                                SoftwareTokenMfaSettingsType.builder()
+                                        .enabled(true)
+                                        .preferredMfa(true)
+                                        .build()
+                        )
+                        .build()
+        );
+
+        // 4. Xóa session tạm
+        mfaCache.remove(userId);
+    }
+
+    @Override
+    public void disableMFA(String userId, String password) {
+        // 1. Verify password
+        Map<String, String> authParams = new HashMap<>();
+        authParams.put("USERNAME", userId);
+        authParams.put("PASSWORD", password);
+
+        cognitoClient.adminInitiateAuth(
+                AdminInitiateAuthRequest.builder()
+                        .userPoolId(userPoolId)
+                        .clientId(appClientId)
+                        .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+                        .authParameters(authParams)
+                        .build()
+        );
+
+        // 2. Disable MFA
+        cognitoClient.adminSetUserMFAPreference(
+                AdminSetUserMfaPreferenceRequest.builder()
+                        .userPoolId(userPoolId)
+                        .username(userId)
+                        .softwareTokenMfaSettings(
+                                SoftwareTokenMfaSettingsType.builder()
+                                        .enabled(false)
+                                        .preferredMfa(false)
+                                        .build()
+                        )
+                        .build()
+        );
     }
 }

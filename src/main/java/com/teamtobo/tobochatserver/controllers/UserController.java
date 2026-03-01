@@ -1,10 +1,13 @@
 package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
+import com.teamtobo.tobochatserver.dtos.request.MfaConfirmRequest;
+import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
+import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -70,4 +73,39 @@ public class UserController {
                 .result(userService.getFriends(userId, cursor, limit))
                 .build();
     }
+
+    @PostMapping("/mfa/init")
+    public ResponseEntity<MfaInitResponse> initMFA(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody MfaInitRequest request
+            ) {
+        String userId = jwt.getSubject();
+
+        MfaInitResponse response = userService.initEnableMFA(userId, request.getPassword());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/mfa/confirm")
+    public ResponseEntity<Void> confirmMFA(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody MfaConfirmRequest request
+            ) {
+        String userId = jwt.getSubject();
+
+        userService.confirmEnableMFA(userId, request.getOtp());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/mfa")
+    public ResponseEntity<Void> disableMFA(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody MfaInitRequest request
+            ) {
+        String userId = jwt.getSubject();
+
+        userService.disableMFA(userId, request.getPassword());
+        return ResponseEntity.noContent().build();
+    }
+
 }

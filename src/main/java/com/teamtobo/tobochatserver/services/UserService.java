@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
+import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 
@@ -30,4 +31,7 @@ public interface UserService {
             String cursor,
             int limit
     );
+    MfaInitResponse initEnableMFA(String userId, String password);
+    void confirmEnableMFA(String userId, String otp);
+    void disableMFA(String userId, String password);
 }
