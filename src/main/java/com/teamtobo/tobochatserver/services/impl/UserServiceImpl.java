@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.entities.UserEntity;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
@@ -213,6 +214,69 @@ public class UserServiceImpl implements UserService {
                         .addedAt(now)
                         .build())
         );
+    }
+
+    @Override
+    public PageResponse<UserResponse> findByEmail(String email, String cursor, int limit) {
+        if (email == null || email.isEmpty()) {
+            return PageResponse.<UserResponse>builder().items(List.of()).build();
+        }
+
+        // 1. Chuẩn hóa chuỗi tìm kiếm và xác định Shard (Partition Key của GSI)
+        String searchPrefix = email.trim().toLowerCase();
+        char firstChar = searchPrefix.toUpperCase().charAt(0);
+        String shardPk = Character.isLetter(firstChar)
+                ? "ENTITY#USER#" + firstChar
+                : "ENTITY#USER#OTHER";
+
+        // 2. Trỏ tới Index GSI_EmailSearch
+        DynamoDbIndex<UserEntity> index = userTable.index("GSI_EmailSearch");
+
+        // 3. Xây dựng Query Builder với điều kiện sortBeginsWith
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(
+                        k -> k.partitionValue(shardPk).sortValue(searchPrefix)
+                ))
+                .limit(limit);
+
+        // 4. Xử lý phân trang (Pagination)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("searchPk", AttributeValue.builder().s(shardPk).build());
+            exclusiveStartKey.put("searchSk", AttributeValue.builder().s(cursor).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s("USER#ID_PLACEHOLDER").build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s("PROFILE").build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // 5. Truy vấn
+        SdkIterable<Page<UserEntity>> results = index.query(builder.build());
+        Iterator<Page<UserEntity>> iterator = results.iterator();
+
+        if (!iterator.hasNext()) {
+            return PageResponse.<UserResponse>builder().items(List.of()).build();
+        }
+
+        Page<UserEntity> page = iterator.next();
+
+        // 6. Lấy cursor cho trang tiếp theo (email của user cuối cùng trong trang)
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null && page.lastEvaluatedKey().containsKey("searchSk")) {
+            nextCursor = page.lastEvaluatedKey().get("searchSk").s();
+        }
+
+        return PageResponse.<UserResponse>builder()
+                .items(page.items().stream().map(
+                        item -> UserResponse.builder()
+                                .id(item.getPk())
+                                .email(item.getEmail())
+                                .avatarUrl(item.getAvatarUrl())
+                                .name(item.getName())
+                                .build()
+                ).toList())
+                .nextCursor(nextCursor)
+                .build();
     }
 
     private String uploadFileToS3(String userId, MultipartFile file) {

@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
@@ -33,6 +34,19 @@ public class UserController {
 
         UserEntity user = userService.getUserProfile(userId);
         return ApiResponse.<UserEntity>builder()
+                .result(user)
+                .build();
+    }
+
+    @Operation(summary = "Tìm người dùng bằng email")
+    @GetMapping("/{email}")
+    public ApiResponse<PageResponse<UserResponse>> findByEmail(
+            @PathVariable String email,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit) {
+
+        PageResponse<UserResponse> user = userService.findByEmail(email, cursor, limit);
+        return ApiResponse.<PageResponse<UserResponse>>builder()
                 .result(user)
                 .build();
     }

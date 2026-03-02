@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.FriendEntity;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.UserEntity;
@@ -18,6 +19,7 @@ public interface UserService {
     void cancelFriendRequest(String userId, String otherId);
 
     void responseFriendRequest(String userId, FriendAcceptRequest request);
+    PageResponse<UserResponse> findByEmail(String email, String cursor, int limit);
 
     PageResponse<FriendEntity> getFriends(
             String userId,
