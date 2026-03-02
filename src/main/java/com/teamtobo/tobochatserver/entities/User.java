@@ -14,7 +14,7 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 @NoArgsConstructor
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class UserEntity extends BaseEntity { // Không lưu mật khẩu, để Cognito lưu
+public class User extends BaseEntity { // Không lưu mật khẩu, để Cognito lưu
     String name;
     String email;
     String avatarUrl;

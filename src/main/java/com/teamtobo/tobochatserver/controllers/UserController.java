@@ -6,9 +6,9 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
-import com.teamtobo.tobochatserver.entities.FriendEntity;
+import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
-import com.teamtobo.tobochatserver.entities.UserEntity;
+import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,11 +29,11 @@ public class UserController {
 
     @Operation(summary = "Thông tin người dùng hiện tại")
     @GetMapping("/me")
-    public ApiResponse<UserEntity> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<User> getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getSubject();
 
-        UserEntity user = userService.getUserProfile(userId);
-        return ApiResponse.<UserEntity>builder()
+        User user = userService.getUserProfile(userId);
+        return ApiResponse.<User>builder()
                 .result(user)
                 .build();
     }
@@ -53,14 +53,14 @@ public class UserController {
 
     @Operation(summary = "Cập nhật thông tin người dùng hiện tại")
     @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<UserEntity> updateProfile(
+    public ResponseEntity<User> updateProfile(
             @AuthenticationPrincipal Jwt jwt,
             @RequestPart(value = "name", required = false) String name,
             @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
 
         String userId = jwt.getSubject();
 
-        UserEntity updatedUser = userService.updateUserProfile(userId, UserUpdateRequest.builder()
+        User updatedUser = userService.updateUserProfile(userId, UserUpdateRequest.builder()
                 .name(name)
                 .avatar(avatar)
                 .build());
@@ -69,7 +69,7 @@ public class UserController {
 
     @Operation(summary = "Danh sách bạn bè của người dùng hiện tại")
     @GetMapping("/me/friends")
-    public ApiResponse<PageResponse<FriendEntity>> getMyFriendList(
+    public ApiResponse<PageResponse<Friend>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
@@ -77,7 +77,7 @@ public class UserController {
 
         String userId = jwt.getSubject();
 
-        return ApiResponse.<PageResponse<FriendEntity>>builder()
+        return ApiResponse.<PageResponse<Friend>>builder()
                 .result(userService.getFriends(userId, cursor, limit))
                 .build();
     }
