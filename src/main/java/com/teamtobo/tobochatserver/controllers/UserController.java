@@ -38,11 +38,13 @@ public class UserController {
     @Operation(summary = "Tìm người dùng bằng email")
     @GetMapping("/{email}")
     public ApiResponse<PageResponse<UserResponse>> findByEmail(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String email,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit) {
+        String userId = jwt.getSubject();
 
-        PageResponse<UserResponse> user = userService.findByEmail(email, cursor, limit);
+        PageResponse<UserResponse> user = userService.findByEmail(userId, email, cursor, limit);
         return ApiResponse.<PageResponse<UserResponse>>builder()
                 .result(user)
                 .build();

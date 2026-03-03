@@ -10,6 +10,7 @@ import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -73,6 +74,15 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.USER_NOT_FOUND);
         }
         return user;
+    }
+
+    private boolean getFriendStatus(String userId, String otherId) {
+        Friend friend = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("FRIEND#" + otherId)
+                .build());
+
+        return friend != null;
     }
 
     @Override
@@ -229,7 +239,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public PageResponse<UserResponse> findByEmail(String email, String cursor, int limit) {
+    public PageResponse<UserResponse> findByEmail(String userId, String email, String cursor, int limit) {
         if (email == null || email.isEmpty()) {
             return PageResponse.<UserResponse>builder().items(List.of()).build();
         }
@@ -285,6 +295,7 @@ public class UserServiceImpl implements UserService {
                                 .email(item.getEmail())
                                 .avatarUrl(item.getAvatarUrl())
                                 .name(item.getName())
+                                .isFriend(getFriendStatus(userId, Helper.normalizeId(item.getPk())))
                                 .build()
                 ).toList())
                 .nextCursor(nextCursor)
