@@ -79,6 +79,7 @@ public class UserController {
                 .build();
     }
 
+    @Operation(summary = "Khởi tạo bật MFA")
     @PostMapping("/mfa/init")
     public ResponseEntity<MfaInitResponse> initMFA(
             @AuthenticationPrincipal Jwt jwt,
@@ -91,6 +92,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
+    @Operation(summary = "Xác nhận bật MFA")
     @PostMapping("/mfa/confirm")
     public ResponseEntity<Void> confirmMFA(
             @AuthenticationPrincipal Jwt jwt,
@@ -102,6 +104,7 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Tắt MFA")
     @DeleteMapping("/mfa")
     public ResponseEntity<Void> disableMFA(
             @AuthenticationPrincipal Jwt jwt,
