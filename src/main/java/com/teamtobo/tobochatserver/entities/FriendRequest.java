@@ -1,9 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
@@ -17,7 +14,10 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 public class FriendRequest extends BaseEntity {
     String name;
     String avatarUrl;
-    String createdAt;
+    @Override
+    public String getEntityType() {
+        return "FRIEND_REQUEST";
+    }
 
     String gsi1pk;
     String gsi1sk;

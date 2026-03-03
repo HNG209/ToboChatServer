@@ -2,16 +2,14 @@ package com.teamtobo.tobochatserver.services;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
-import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 
 public interface UserService {
-    User getUserProfile(String userId);
+    UserResponse getUserProfile(String userId);
 
     User updateUserProfile(String userId, UserUpdateRequest request);
 
@@ -22,13 +20,13 @@ public interface UserService {
     void responseFriendRequest(String userId, FriendAcceptRequest request);
     PageResponse<UserResponse> findByEmail(String email, String cursor, int limit);
 
-    PageResponse<Friend> getFriends(
+    PageResponse<FriendResponse> getFriends(
             String userId,
             String cursor,
             int limit
     );
 
-    PageResponse<FriendRequest> getFriendRequests(
+    PageResponse<FriendRequestResponse> getFriendRequests(
             FriendRequestType type,
             String userId,
             String cursor,

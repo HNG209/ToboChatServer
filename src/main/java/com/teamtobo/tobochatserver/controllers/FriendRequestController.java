@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
@@ -61,14 +62,14 @@ public class FriendRequestController {
 
     @Operation(summary = "Lấy danh sách lời mời (đã gửi/đang chờ)")
     @GetMapping
-    public ApiResponse<PageResponse<FriendRequest>> getFriendRequestList(
+    public ApiResponse<PageResponse<FriendRequestResponse>> getFriendRequestList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam FriendRequestType type,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
 
-        return ApiResponse.<PageResponse<FriendRequest>>builder()
+        return ApiResponse.<PageResponse<FriendRequestResponse>>builder()
                 .result(userService.getFriendRequests(
                         type,
                         jwt.getSubject(),

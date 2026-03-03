@@ -18,4 +18,9 @@ public class Friend extends BaseEntity{
     String name;
     String avatarUrl;
     String addedAt;
+
+    @Override
+    public String getEntityType() {
+        return "FRIEND";
+    }
 }

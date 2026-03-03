@@ -10,10 +10,9 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class UserResponse {
+public class FriendRequestResponse {
     String id; // pk
     String name;
-    String email;
     String avatarUrl;
-    String createdAt;
+    String createdAt; // Ngày gửi lời mời
 }

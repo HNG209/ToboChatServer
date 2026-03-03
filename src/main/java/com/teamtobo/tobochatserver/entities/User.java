@@ -23,6 +23,11 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     String searchSk;
 
     @Override
+    public String getEntityType() {
+        return "USER";
+    }
+
+    @Override
     @DynamoDbPartitionKey
     public String getPk() {
         return super.getPk();

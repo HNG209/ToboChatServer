@@ -7,21 +7,23 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
+import java.time.Instant;
+
 @Data
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @DynamoDbBean
 public abstract class BaseEntity { // Single Tale (Dùng chung cho tất cả Entity)
-
-    // Partition Key: Khoá phân vùng
     private String pk;
-
-    // Sort Key: Khoá sắp xếp
     private String sk;
-
-    // Loại entity (USER, MSG...)
     private String entityType;
+
+    @Builder.Default
+    private String createdAt = Instant.now().toString();
+
+    @Builder.Default
+    private String updatedAt = Instant.now().toString();
 
     @DynamoDbPartitionKey
     @DynamoDbSecondarySortKey(indexNames = "GSI_FriendRequest")
