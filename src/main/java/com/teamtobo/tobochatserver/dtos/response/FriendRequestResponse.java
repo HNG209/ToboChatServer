@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -15,4 +16,7 @@ public class FriendRequestResponse {
     String name;
     String avatarUrl;
     String createdAt; // Ngày gửi lời mời
+    public String getId() {
+        return Helper.normalizeId(this.id);
+    }
 }

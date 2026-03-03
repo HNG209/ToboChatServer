@@ -18,7 +18,7 @@ public interface UserService {
     void cancelFriendRequest(String userId, String otherId);
 
     void responseFriendRequest(String userId, FriendAcceptRequest request);
-    PageResponse<UserResponse> findByEmail(String email, String cursor, int limit);
+    PageResponse<UserResponse> findByEmail(String userId, String email, String cursor, int limit);
 
     PageResponse<FriendResponse> getFriends(
             String userId,

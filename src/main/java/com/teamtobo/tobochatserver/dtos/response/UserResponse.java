@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -16,4 +17,8 @@ public class UserResponse {
     String email;
     String avatarUrl;
     String createdAt;
+    boolean isFriend;
+    public String getId() {
+        return Helper.normalizeId(this.id);
+    }
 }
