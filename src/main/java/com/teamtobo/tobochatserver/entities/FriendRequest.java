@@ -1,9 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
@@ -14,32 +11,28 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 @NoArgsConstructor
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class FriendEntity extends BaseEntity{
+public class FriendRequest extends BaseEntity {
     String name;
-    String addedAt;
+    String avatarUrl;
+    @Override
+    public String getEntityType() {
+        return "FRIEND_REQUEST";
+    }
 
     String gsi1pk;
     String gsi1sk;
 
     @Override
     @DynamoDbPartitionKey
-    public String getPk() {
-        return super.getPk();
-    }
+    public String getPk() { return super.getPk(); } // USER#Sender
 
     @Override
     @DynamoDbSortKey
-    public String getSk() {
-        return super.getSk();
-    }
+    public String getSk() { return super.getSk(); } // REQUEST#Receiver
 
     @DynamoDbSecondaryPartitionKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1pk() {
-        return gsi1pk;
-    }
+    public String getGsi1pk() { return gsi1pk; } // REQUEST#Receiver
 
     @DynamoDbSecondarySortKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1sk() {
-        return gsi1sk;
-    }
+    public String getGsi1sk() { return gsi1sk; } // USER#Sender
 }

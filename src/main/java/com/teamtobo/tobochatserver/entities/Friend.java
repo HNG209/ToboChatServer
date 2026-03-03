@@ -6,7 +6,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -14,8 +14,13 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 @NoArgsConstructor
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class UserEntity extends BaseEntity { // Không lưu mật khẩu, để Cognito lưu
+public class Friend extends BaseEntity{
     String name;
-    String email;
     String avatarUrl;
+    String addedAt;
+
+    @Override
+    public String getEntityType() {
+        return "FRIEND";
+    }
 }

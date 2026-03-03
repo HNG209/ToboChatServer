@@ -2,10 +2,10 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.MfaInitResponse;
-import com.teamtobo.tobochatserver.entities.FriendEntity;
-import com.teamtobo.tobochatserver.entities.UserEntity;
+import com.teamtobo.tobochatserver.dtos.response.*;
+import com.teamtobo.tobochatserver.entities.Friend;
+import com.teamtobo.tobochatserver.entities.FriendRequest;
+import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -45,8 +45,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
-    private final DynamoDbTable<UserEntity> userTable;
-    private final DynamoDbTable<FriendEntity> friendTable;
+    private final DynamoDbTable<User> userTable;
+    private final DynamoDbTable<Friend> friendTable;
+    private final DynamoDbTable<FriendRequest> friendRequestTable;
     private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
     private final S3Client s3Client;
@@ -61,10 +62,9 @@ public class UserServiceImpl implements UserService {
     @Value("${aws.s3.bucketName}")
     private String bucketName;
 
-    @Override
-    public UserEntity getUserProfile(String userId) {
+    private User getUserById(String userId) {
         // Query DynamoDB bằng PK (USER#id) và SK (PROFILE)
-        UserEntity user = userTable.getItem(Key.builder()
+        User user = userTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("PROFILE")
                 .build());
@@ -76,8 +76,20 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserEntity updateUserProfile(String userId, UserUpdateRequest request) {
-        UserEntity user = getUserProfile(userId);
+    public UserResponse getUserProfile(String userId) {
+        User user = getUserById(userId);
+        return UserResponse.builder()
+                .id(user.getPk())
+                .name(user.getName())
+                .avatarUrl(user.getAvatarUrl())
+                .email(user.getEmail())
+                .createdAt(user.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    public User updateUserProfile(String userId, UserUpdateRequest request) {
+        User user = getUserById(userId);
         boolean isChanged = false;
 
         // 2. Xử lý Upload Avatar (Nếu có gửi file)
@@ -110,10 +122,10 @@ public class UserServiceImpl implements UserService {
         }
 
         // 1. Kiểm tra người được gửi lời mời có tồn tại để lấy fullName của họ
-        UserEntity other = getUserProfile(otherId);
+        User other = getUserById(otherId);
 
         // 2. Kiểm tra đã là bạn chưa
-        FriendEntity existingFriend = friendTable.getItem(Key.builder()
+        Friend existingFriend = friendTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("FRIEND#" + otherId)
                 .build());
@@ -122,7 +134,7 @@ public class UserServiceImpl implements UserService {
         }
 
         // 3. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
-        FriendEntity existingRequest = friendTable.getItem(Key.builder()
+        FriendRequest existingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("REQUEST#" + otherId)
                 .build());
@@ -131,7 +143,7 @@ public class UserServiceImpl implements UserService {
         }
 
         // 4. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
-        FriendEntity incomingRequest = friendTable.getItem(Key.builder()
+        FriendRequest incomingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + otherId)
                 .sortValue("REQUEST#" + userId)
                 .build());
@@ -140,15 +152,16 @@ public class UserServiceImpl implements UserService {
         }
 
         // 5. Tạo friend request
-        FriendEntity friendRequest = FriendEntity.builder()
+        FriendRequest friendRequest = FriendRequest.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
                 .gsi1pk("REQUEST#" + otherId)
                 .gsi1sk("USER#" + userId)
+                .avatarUrl(other.getAvatarUrl())
                 .name(other.getName())
                 .build();
 
-        friendTable.putItem(friendRequest);
+        friendRequestTable.putItem(friendRequest);
     }
 
     @Override
@@ -158,12 +171,12 @@ public class UserServiceImpl implements UserService {
                 .sortValue("REQUEST#" + otherId)
                 .build();
 
-        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        FriendRequest existingRequest = friendRequestTable.getItem(requestKey);
         if (existingRequest == null) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
         }
 
-        friendTable.deleteItem(requestKey);
+        friendRequestTable.deleteItem(requestKey);
     }
 
     @Override
@@ -175,21 +188,19 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         // Kiểm tra request có tồn tại không
-        FriendEntity existingRequest = friendTable.getItem(requestKey);
+        FriendRequest existingRequest = friendRequestTable.getItem(requestKey);
         if (existingRequest == null) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
         }
 
         if (!request.isAccepted()) {
             // Xóa yêu cầu nếu từ chối
-            friendTable.deleteItem(requestKey);
+            friendRequestTable.deleteItem(requestKey);
             return;
         }
 
-        UserEntity currentUser = getUserProfile(userId);
-        UserEntity senderUser = getUserProfile(request.getFromUser());
-
-        if (currentUser == null || senderUser == null) return;
+        User currentUser = getUserById(userId);
+        User senderUser = getUserById(request.getFromUser());
 
         String now = Instant.now().toString();
 
@@ -198,21 +209,86 @@ public class UserServiceImpl implements UserService {
                 .addDeleteItem(friendTable, requestKey)
 
                 // Thêm bạn cho User hiện tại (userId)
-                .addPutItem(friendTable, FriendEntity.builder()
+                .addPutItem(friendTable, Friend.builder()
                         .pk("USER#" + userId)
                         .sk("FRIEND#" + request.getFromUser())
                         .name(senderUser.getName())
+                        .avatarUrl(senderUser.getAvatarUrl())
                         .addedAt(now)
                         .build())
 
                 // Thêm bạn cho người gửi (fromUser)
-                .addPutItem(friendTable, FriendEntity.builder()
+                .addPutItem(friendTable, Friend.builder()
                         .pk("USER#" + request.getFromUser())
                         .sk("FRIEND#" + userId)
                         .name(currentUser.getName())
+                        .avatarUrl(currentUser.getAvatarUrl())
                         .addedAt(now)
                         .build())
         );
+    }
+
+    @Override
+    public PageResponse<UserResponse> findByEmail(String email, String cursor, int limit) {
+        if (email == null || email.isEmpty()) {
+            return PageResponse.<UserResponse>builder().items(List.of()).build();
+        }
+
+        // 1. Chuẩn hóa chuỗi tìm kiếm và xác định Shard (Partition Key của GSI)
+        String searchPrefix = email.trim().toLowerCase();
+        char firstChar = searchPrefix.toUpperCase().charAt(0);
+        String shardPk = Character.isLetter(firstChar)
+                ? "ENTITY#USER#" + firstChar
+                : "ENTITY#USER#OTHER";
+
+        // 2. Trỏ tới Index GSI_EmailSearch
+        DynamoDbIndex<User> index = userTable.index("GSI_EmailSearch");
+
+        // 3. Xây dựng Query Builder với điều kiện sortBeginsWith
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(
+                        k -> k.partitionValue(shardPk).sortValue(searchPrefix)
+                ))
+                .limit(limit);
+
+        // 4. Xử lý phân trang (Pagination)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            exclusiveStartKey.put("searchPk", AttributeValue.builder().s(shardPk).build());
+            exclusiveStartKey.put("searchSk", AttributeValue.builder().s(cursor).build());
+            exclusiveStartKey.put("pk", AttributeValue.builder().s("USER#ID_PLACEHOLDER").build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s("PROFILE").build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // 5. Truy vấn
+        SdkIterable<Page<User>> results = index.query(builder.build());
+        Iterator<Page<User>> iterator = results.iterator();
+
+        if (!iterator.hasNext()) {
+            return PageResponse.<UserResponse>builder().items(List.of()).build();
+        }
+
+        Page<User> page = iterator.next();
+
+        // 6. Lấy cursor cho trang tiếp theo (email của user cuối cùng trong trang)
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null && page.lastEvaluatedKey().containsKey("searchSk")) {
+            nextCursor = page.lastEvaluatedKey().get("searchSk").s();
+        }
+
+        return PageResponse.<UserResponse>builder()
+                .items(page.items().stream().map(
+                        item -> UserResponse.builder()
+                                .id(item.getPk())
+                                .email(item.getEmail())
+                                .avatarUrl(item.getAvatarUrl())
+                                .name(item.getName())
+                                .build()
+                ).toList())
+                .nextCursor(nextCursor)
+                .build();
     }
 
     private String uploadFileToS3(String userId, MultipartFile file) {
@@ -251,7 +327,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public PageResponse<FriendEntity> getFriends(
+    public PageResponse<FriendResponse> getFriends(
             String userId,
             String cursor,
             int limit
@@ -282,14 +358,14 @@ public class UserServiceImpl implements UserService {
             requestBuilder.exclusiveStartKey(exclusiveStartKey);
         }
 
-        Page<FriendEntity> page = friendTable
+        Page<Friend> page = friendTable
                 .query(requestBuilder.build())
                 .stream()
                 .findFirst()
                 .orElse(null);
 
         if (page == null) {
-            return PageResponse.<FriendEntity>builder()
+            return PageResponse.<FriendResponse>builder()
                     .items(List.of())
                     .nextCursor(null)
                     .build();
@@ -302,21 +378,31 @@ public class UserServiceImpl implements UserService {
             nextCursor = page.lastEvaluatedKey().get("sk").s();
         }
 
-        return PageResponse.<FriendEntity>builder()
-                .items(page.items())
+        return PageResponse.<FriendResponse>builder()
+                .items(page.items().stream().map(
+                        i -> FriendResponse.builder()
+                                .id(i.getPk())
+                                .name(i.getName())
+                                .avatarUrl(i.getAvatarUrl())
+                                .createdAt(i.getCreatedAt())
+                                .build()
+                ).toList())
                 .nextCursor(nextCursor)
                 .build();
     }
 
     @Override
-    public PageResponse<FriendEntity> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
+    public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type,
+                                                                 String userId,
+                                                                 String cursor,
+                                                                 int limit) {
         return switch (type) {
             case SENT -> getSentRequests(userId, cursor, limit);
             case PENDING -> getPendingRequests(userId, cursor, limit);
         };
     }
 
-    private PageResponse<FriendEntity> getSentRequests(
+    private PageResponse<FriendRequestResponse> getSentRequests(
             String userId,
             String cursor,
             int limit
@@ -346,14 +432,14 @@ public class UserServiceImpl implements UserService {
             requestBuilder.exclusiveStartKey(exclusiveStartKey);
         }
 
-        Page<FriendEntity> page = friendTable
+        Page<FriendRequest> page = friendRequestTable
                 .query(requestBuilder.build())
                 .stream()
                 .findFirst()
                 .orElse(null);
 
         if (page == null) {
-            return PageResponse.<FriendEntity>builder()
+            return PageResponse.<FriendRequestResponse>builder()
                     .items(List.of())
                     .nextCursor(null)
                     .build();
@@ -366,15 +452,22 @@ public class UserServiceImpl implements UserService {
             nextCursor = page.lastEvaluatedKey().get("sk").s();
         }
 
-        return PageResponse.<FriendEntity>builder()
-                .items(page.items())
+        return PageResponse.<FriendRequestResponse>builder()
+                .items(page.items().stream().map(
+                        i -> FriendRequestResponse.builder()
+                                .id(i.getPk())
+                                .name(i.getName())
+                                .avatarUrl(i.getAvatarUrl())
+                                .createdAt(i.getCreatedAt())
+                                .build()
+                ).toList())
                 .nextCursor(nextCursor)
                 .build();
     }
 
-    private PageResponse<FriendEntity> getPendingRequests(String userId, String cursor, int limit) {
+    private PageResponse<FriendRequestResponse> getPendingRequests(String userId, String cursor, int limit) {
         String gsiPartitionKey = "REQUEST#" + userId;
-        DynamoDbIndex<FriendEntity> index = friendTable.index("GSI_FriendRequest");
+        DynamoDbIndex<FriendRequest> index = friendRequestTable.index("GSI_FriendRequest");
 
         QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
                 .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
@@ -392,11 +485,11 @@ public class UserServiceImpl implements UserService {
         }
 
         // Thực thi Query trên Index
-        SdkIterable<Page<FriendEntity>> results = index.query(builder.build());
-        Page<FriendEntity> firstPage = results.iterator().next(); // Lấy trang đầu tiên
+        SdkIterable<Page<FriendRequest>> results = index.query(builder.build());
+        Page<FriendRequest> firstPage = results.iterator().next(); // Lấy trang đầu tiên
 
         if (firstPage == null || firstPage.items().isEmpty()) {
-            return PageResponse.<FriendEntity>builder().items(List.of()).build();
+            return PageResponse.<FriendRequestResponse>builder().items(List.of()).build();
         }
 
         // Lấy cursor cho trang tiếp theo
@@ -405,8 +498,15 @@ public class UserServiceImpl implements UserService {
             nextCursor = firstPage.lastEvaluatedKey().get("gsi1sk").s();
         }
 
-        return PageResponse.<FriendEntity>builder()
-                .items(firstPage.items())
+        return PageResponse.<FriendRequestResponse>builder()
+                .items(firstPage.items().stream().map(
+                        i -> FriendRequestResponse.builder()
+                                .id(i.getPk())
+                                .name(i.getName())
+                                .avatarUrl(i.getAvatarUrl())
+                                .createdAt(i.getCreatedAt())
+                                .build()
+                ).toList())
                 .nextCursor(nextCursor)
                 .build();
     }
