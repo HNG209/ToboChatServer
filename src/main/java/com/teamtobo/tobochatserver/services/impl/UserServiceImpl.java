@@ -466,7 +466,7 @@ public class UserServiceImpl implements UserService {
         return PageResponse.<FriendRequestResponse>builder()
                 .items(page.items().stream().map(
                         i -> FriendRequestResponse.builder()
-                                .id(i.getPk())
+                                .id(i.getSk())
                                 .name(i.getName())
                                 .avatarUrl(i.getAvatarUrl())
                                 .createdAt(i.getCreatedAt())
