@@ -1,8 +1,6 @@
 package com.teamtobo.tobochatserver.configs;
 
-import com.teamtobo.tobochatserver.entities.Friend;
-import com.teamtobo.tobochatserver.entities.FriendRequest;
-import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
@@ -34,6 +32,16 @@ public class DynamoDbConfig {
     @Bean
     public DynamoDbTable<FriendRequest> friendRequestTable(DynamoDbEnhancedClient enhancedClient) {
         return enhancedClient.table("ToboChatTable", TableSchema.fromBean(FriendRequest.class));
+    }
+
+    @Bean
+    public DynamoDbTable<Room> RoomTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(Room.class));
+    }
+
+    @Bean
+    public DynamoDbTable<RoomMember> RoomMemberTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(RoomMember.class));
     }
 
     @Bean

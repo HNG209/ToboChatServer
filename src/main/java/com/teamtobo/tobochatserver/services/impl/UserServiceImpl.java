@@ -1,14 +1,17 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +53,7 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
     private final DynamoDbEnhancedClient enhancedClient;
+    private final RoomService roomService;
     private final CognitoIdentityProviderClient cognitoClient;
     private final S3Client s3Client;
     private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
@@ -235,6 +239,13 @@ public class UserServiceImpl implements UserService {
                         .avatarUrl(currentUser.getAvatarUrl())
                         .addedAt(now)
                         .build())
+        );
+
+        roomService.createRoom(
+                RoomCreateRequest.builder()
+                        .memberIds(List.of(userId, request.getFromUser()))
+                        .build(),
+                RoomType.DM
         );
     }
 
