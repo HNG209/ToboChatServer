@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -19,4 +20,11 @@ public class RoomMember extends BaseEntity {
     String role;
     String roomName;
     String lastActivityAt;
+    public String getMemberId() {
+        return Helper.normalizeId(super.getSk());
+    }
+    @Override
+    public String getEntityType() {
+        return "ROOM_MEMBER";
+    }
 }

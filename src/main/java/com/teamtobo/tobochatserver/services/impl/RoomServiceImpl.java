@@ -12,6 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 
 import java.time.Instant;
@@ -72,6 +75,25 @@ public class RoomServiceImpl implements RoomService {
                 saveRoomToDynamoDB(roomId, request.getRoomName(), roomType, uniqueMembers, now);
             }
         }
+    }
+
+    @Override
+    public List<String> getMembersByRoomId(String roomId) {
+        // 1. Tạo điều kiện truy vấn
+        Key searchKey = Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("MEMBER#")
+                .build();
+
+        QueryConditional queryConditional = QueryConditional.sortBeginsWith(searchKey);
+
+        // 2. Thực hiện query
+        PageIterable<RoomMember> results = roomMemberTable.query(queryConditional);
+
+        // 3. Lọc qua kết quả và chỉ lấy ra danh sách userId
+        return results.items().stream()
+                .map(RoomMember::getMemberId)
+                .collect(Collectors.toList());
     }
 
     private void saveRoomToDynamoDB(String roomId, String roomName, RoomType type, List<String> memberIds, String now) {

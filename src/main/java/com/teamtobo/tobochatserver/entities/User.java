@@ -21,7 +21,6 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
 
     String searchPk;
     String searchSk;
-
     @Override
     public String getEntityType() {
         return "USER";
