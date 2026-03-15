@@ -91,8 +91,8 @@ public class RoomServiceImpl implements RoomService {
 
         if (cursor != null && !cursor.isEmpty()) {
             Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
-            exclusiveStartKey.put("memberPk", AttributeValue.builder().s(gsiPartitionKey).build());
-            exclusiveStartKey.put("memberSk", AttributeValue.builder().s(cursor).build());
+            exclusiveStartKey.put("roomPk", AttributeValue.builder().s(gsiPartitionKey).build());
+            exclusiveStartKey.put("roomSk", AttributeValue.builder().s(cursor).build());
             exclusiveStartKey.put("pk", AttributeValue.builder().s("ROOM#" + cursor.replace("ROOM#", "")).build());
             exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
 
@@ -110,7 +110,7 @@ public class RoomServiceImpl implements RoomService {
         // Lấy cursor cho trang tiếp theo
         String nextCursor = null;
         if (firstPage.lastEvaluatedKey() != null) {
-            nextCursor = firstPage.lastEvaluatedKey().get("memberSk").s();
+            nextCursor = firstPage.lastEvaluatedKey().get("roomSk").s();
         }
 
         return PageResponse.<RoomResponse>builder()

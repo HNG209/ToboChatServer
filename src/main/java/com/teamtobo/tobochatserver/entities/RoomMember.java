@@ -22,8 +22,8 @@ public class RoomMember extends BaseEntity {
     String lastActivityAt;
 
     // GSI_RoomMember
-    String memberPk;
-    String memberSk;
+    String roomPk;
+    String roomSk;
 
     // Phase 1: upgrade later
     @Override
@@ -34,9 +34,9 @@ public class RoomMember extends BaseEntity {
     public String getSk() { return super.getSk(); }
 
     @DynamoDbSecondaryPartitionKey(indexNames = "GSI_RoomMember")
-    public String getMemberPk() { return super.getSk(); }
+    public String getRoomPk() { return super.getSk(); }
     @DynamoDbSecondarySortKey(indexNames = "GSI_RoomMember")
-    public String getMemberSk() { return super.getPk(); }
+    public String getRoomSk() { return super.getPk(); }
     //====================
 
     public String getMemberId() {
