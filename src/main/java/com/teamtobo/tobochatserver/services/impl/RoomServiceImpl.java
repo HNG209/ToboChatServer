@@ -115,10 +115,15 @@ public class RoomServiceImpl implements RoomService {
 
         return PageResponse.<RoomResponse>builder()
                 .items(firstPage.items().stream().map(
-                        i -> RoomResponse.builder()
-                                .id(i.getPk()) // room id
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            Room room = getRoomMetadata(i.getPk());
+                            return RoomResponse.builder()
+                                    .id(i.getPk()) // room id
+                                    .roomName(i.getRoomName())
+                                    .roomType(room.getRoomType())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
@@ -187,5 +192,13 @@ public class RoomServiceImpl implements RoomService {
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
+    }
+    public Room getRoomMetadata(String roomId) {
+        Key key = Key.builder()
+                .partitionValue(roomId)
+                .sortValue("METADATA")
+                .build();
+
+        return roomTable.getItem(key);
     }
 }
