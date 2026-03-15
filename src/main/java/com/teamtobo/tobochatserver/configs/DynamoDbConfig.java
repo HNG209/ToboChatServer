@@ -2,6 +2,8 @@ package com.teamtobo.tobochatserver.configs;
 
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
+import com.teamtobo.tobochatserver.entities.Room;
+import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.User;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,6 +36,16 @@ public class DynamoDbConfig {
     @Bean
     public DynamoDbTable<FriendRequest> friendRequestTable(DynamoDbEnhancedClient enhancedClient) {
         return enhancedClient.table("ToboChatTable", TableSchema.fromBean(FriendRequest.class));
+    }
+
+    @Bean
+    public DynamoDbTable<Room> roomTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(Room.class));
+    }
+
+    @Bean
+    public DynamoDbTable<RoomMember> roomMemberTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(RoomMember.class));
     }
 
     @Bean
