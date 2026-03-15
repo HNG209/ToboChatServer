@@ -32,8 +32,8 @@ public class FriendRequest extends BaseEntity {
     public String getSk() { return super.getSk(); } // REQUEST#Receiver
 
     @DynamoDbSecondaryPartitionKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1pk() { return gsi1pk; } // REQUEST#Receiver
+    public String getGsi1pk() { return super.getSk(); } // REQUEST#Receiver
 
     @DynamoDbSecondarySortKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1sk() { return gsi1sk; } // USER#Sender
+    public String getGsi1sk() { return super.getPk(); } // USER#Sender
 }

@@ -169,8 +169,6 @@ public class UserServiceImpl implements UserService {
         FriendRequest friendRequest = FriendRequest.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
-                .gsi1pk("REQUEST#" + otherId)
-                .gsi1sk("USER#" + userId)
                 .avatarUrl(other.getAvatarUrl())
                 .name(other.getName())
                 .build();
