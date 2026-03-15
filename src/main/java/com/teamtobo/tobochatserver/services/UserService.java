@@ -38,4 +38,6 @@ public interface UserService {
     void confirmEnableMFA(String userId, String otp);
 
     void disableMFA(String userId, String password);
+
+    PageResponse<RoomResponse> getRooms(String userId, String cursor, int limit);
 }

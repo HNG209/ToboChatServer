@@ -36,6 +36,7 @@ public enum ErrorCode {
     ALREADY_FRIENDS(5002, "[5002] Already friends", HttpStatus.BAD_REQUEST),
     CANNOT_ADD_SELF(5003, "[5003] Cannot send friend request to yourself", HttpStatus.BAD_REQUEST),
     FRIEND_REQUEST_NOT_FOUND(5004, "[5004] Friend request not found", HttpStatus.NOT_FOUND),
+    ROOM_NOT_FOUND(5005, "[5005] Room not found", HttpStatus.NOT_FOUND),
     //    INVALID_DOB(3003, "[3003] Invalid date of birth", HttpStatus.BAD_REQUEST),
     CUSTOMER_NOT_FOUND(4001, "[4001] Customer not found", HttpStatus.NOT_FOUND),
     PRODUCT_NOT_FOUND(4002, "[4002] Product not found", HttpStatus.NOT_FOUND),
