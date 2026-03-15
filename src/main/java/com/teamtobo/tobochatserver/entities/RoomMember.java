@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -24,7 +25,7 @@ public class RoomMember extends BaseEntity {
         return Helper.normalizeId(super.getSk());
     }
     @Override
-    public String getEntityType() {
-        return "ROOM_MEMBER";
+    public EntityType getEntityType() {
+        return EntityType.ROOM_MEMBER;
     }
 }

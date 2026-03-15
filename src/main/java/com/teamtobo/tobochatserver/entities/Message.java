@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -20,7 +21,7 @@ public class Message extends BaseEntity {
     String senderId;
     MessageType messageType;
     @Override
-    public String getEntityType() {
-        return "MESSAGE";
+    public EntityType getEntityType() {
+        return EntityType.MESSAGE;
     }
 }

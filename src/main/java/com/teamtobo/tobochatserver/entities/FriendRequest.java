@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -15,8 +16,8 @@ public class FriendRequest extends BaseEntity {
     String name;
     String avatarUrl;
     @Override
-    public String getEntityType() {
-        return "FRIEND_REQUEST";
+    public EntityType getEntityType() {
+        return EntityType.FRIEND_REQUEST;
     }
 
     String gsi1pk;

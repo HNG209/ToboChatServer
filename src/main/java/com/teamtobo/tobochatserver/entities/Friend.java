@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -20,7 +21,7 @@ public class Friend extends BaseEntity{
     String addedAt;
 
     @Override
-    public String getEntityType() {
-        return "FRIEND";
+    public EntityType getEntityType() {
+        return EntityType.FRIEND;
     }
 }

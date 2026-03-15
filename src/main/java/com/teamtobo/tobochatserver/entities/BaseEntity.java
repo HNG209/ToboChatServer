@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,7 +18,7 @@ import java.time.Instant;
 public abstract class BaseEntity { // Single Tale (Dùng chung cho tất cả Entity)
     private String pk;
     private String sk;
-    private String entityType;
+    private EntityType entityType;
 
     @Builder.Default
     private String createdAt = Instant.now().toString();
