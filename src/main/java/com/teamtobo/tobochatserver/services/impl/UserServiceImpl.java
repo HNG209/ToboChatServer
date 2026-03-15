@@ -5,8 +5,10 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
+import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -49,6 +51,7 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<User> userTable;
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
+    private final DynamoDbTable<Room> roomTable;
     private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
     private final S3Client s3Client;
@@ -213,6 +216,7 @@ public class UserServiceImpl implements UserService {
         User senderUser = getUserById(request.getFromUser());
 
         String now = Instant.now().toString();
+        String roomId = UUID.randomUUID().toString();
 
         enhancedClient.transactWriteItems(b -> b
                 // Xóa bản ghi Request
@@ -234,6 +238,28 @@ public class UserServiceImpl implements UserService {
                         .name(currentUser.getName())
                         .avatarUrl(currentUser.getAvatarUrl())
                         .addedAt(now)
+                        .build())
+
+                // Tạo DM Room cho User hiện tại (hiển thị thông tin của người gửi)
+                .addPutItem(roomTable, Room.builder()
+                        .pk("USER#" + userId)
+                        .sk("ROOM#" + roomId)
+                        .roomId(roomId)
+                        .type(RoomType.DM.name())
+                        .participantId(request.getFromUser())
+                        .participantName(senderUser.getName())
+                        .participantAvatarUrl(senderUser.getAvatarUrl())
+                        .build())
+
+                // Tạo DM Room cho người gửi (hiển thị thông tin của User hiện tại)
+                .addPutItem(roomTable, Room.builder()
+                        .pk("USER#" + request.getFromUser())
+                        .sk("ROOM#" + roomId)
+                        .roomId(roomId)
+                        .type(RoomType.DM.name())
+                        .participantId(userId)
+                        .participantName(currentUser.getName())
+                        .participantAvatarUrl(currentUser.getAvatarUrl())
                         .build())
         );
     }
@@ -392,7 +418,7 @@ public class UserServiceImpl implements UserService {
         return PageResponse.<FriendResponse>builder()
                 .items(page.items().stream().map(
                         i -> FriendResponse.builder()
-                                .id(i.getPk())
+                                .id(i.getSk()) // SK = FRIEND#{friendId} → normalizeId trả về đúng friendId
                                 .name(i.getName())
                                 .avatarUrl(i.getAvatarUrl())
                                 .createdAt(i.getCreatedAt())
@@ -617,5 +643,68 @@ public class UserServiceImpl implements UserService {
                         )
                         .build()
         );
+    }
+
+    @Override
+    public PageResponse<RoomResponse> getRooms(String userId, String cursor, int limit) {
+        String pk = "USER#" + userId;
+
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(
+                        QueryConditional.sortBeginsWith(
+                                Key.builder()
+                                        .partitionValue(pk)
+                                        .sortValue("ROOM#")
+                                        .build()
+                        )
+                )
+                .limit(limit);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = Map.of(
+                    "pk", AttributeValue.builder().s(pk).build(),
+                    "sk", AttributeValue.builder().s(cursor).build()
+            );
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<Room> page = roomTable
+                .query(requestBuilder.build())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (page == null) {
+            return PageResponse.<RoomResponse>builder()
+                    .items(List.of())
+                    .nextCursor(null)
+                    .build();
+        }
+
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null && page.lastEvaluatedKey().get("sk") != null) {
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        String dmTypeName = RoomType.DM.name();
+        List<RoomResponse> items = page.items().stream().map(room -> {
+            // Với DM Room: name và avatarUrl lấy từ thông tin của người kia
+            // Với GROUP Room: name và avatarUrl là của nhóm
+            boolean isDm = dmTypeName.equals(room.getType());
+            return RoomResponse.builder()
+                    .id(room.getRoomId())
+                    .type(room.getType())
+                    .name(isDm ? room.getParticipantName() : room.getName())
+                    .avatarUrl(isDm ? room.getParticipantAvatarUrl() : room.getAvatarUrl())
+                    .participantId(isDm ? room.getParticipantId() : null)
+                    .lastMessage(room.getLastMessage())
+                    .lastMessageAt(room.getLastMessageAt())
+                    .build();
+        }).toList();
+
+        return PageResponse.<RoomResponse>builder()
+                .items(items)
+                .nextCursor(nextCursor)
+                .build();
     }
 }
