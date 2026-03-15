@@ -13,7 +13,9 @@ import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.CognitoHelper;
 import com.teamtobo.tobochatserver.utils.Helper;
+import com.teamtobo.tobochatserver.utils.S3Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,9 +55,11 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
     private final DynamoDbEnhancedClient enhancedClient;
-    private final RoomService roomService;
     private final CognitoIdentityProviderClient cognitoClient;
-    private final S3Client s3Client;
+    private final RoomService roomService;
+
+    private final S3Helper s3Helper;
+    private final CognitoHelper cognitoHelper;
     private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
 
     @Value("${aws.cognito.userPoolId}")
@@ -63,10 +67,6 @@ public class UserServiceImpl implements UserService {
 
     @Value("${aws.cognito.appClientId}")
     private String appClientId;
-
-    @Value("${aws.s3.bucketName}")
-    private String bucketName;
-
     private User getUserById(String userId) {
         // Query DynamoDB bằng PK (USER#id) và SK (PROFILE)
         User user = userTable.getItem(Key.builder()
@@ -108,7 +108,7 @@ public class UserServiceImpl implements UserService {
 
         // 2. Xử lý Upload Avatar (Nếu có gửi file)
         if (request.getAvatar() != null && !request.getAvatar().isEmpty()) {
-            String s3Url = uploadFileToS3(userId, request.getAvatar());
+            String s3Url = s3Helper.uploadFileToS3(userId, request.getAvatar());
             user.setAvatarUrl(s3Url); // Cập nhật URL mới vào entity
             isChanged = true;
         }
@@ -116,7 +116,7 @@ public class UserServiceImpl implements UserService {
         // 3. Xử lý đổi tên (Nếu có gửi tên mới)
         if (request.getName() != null && !request.getName().isBlank() && !request.getName().equals(user.getName())) {
             user.setName(request.getName());
-            syncNameToCognito(userId, request.getName()); // Đồng bộ sang Cognito
+            cognitoHelper.syncNameToCognito(userId, request.getName()); // Đồng bộ sang Cognito
             isChanged = true;
         }
 
@@ -311,41 +311,6 @@ public class UserServiceImpl implements UserService {
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
-    }
-
-    private String uploadFileToS3(String userId, MultipartFile file) {
-        // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
-        String fileName = "users/" + userId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
-
-        try {
-            PutObjectRequest putOb = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .contentType(file.getContentType())
-                    .build();
-
-            // Upload lên S3
-            s3Client.putObject(putOb, RequestBody.fromBytes(file.getBytes()));
-
-            // Lấy URL trả về
-            return s3Client.utilities().getUrl(GetUrlRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .build()).toExternalForm();
-
-        } catch (IOException e) {
-            throw new AppException(ErrorCode.UPLOAD_ERROR);
-        }
-    }
-
-    private void syncNameToCognito(String userId, String newName) {
-        AttributeType nameAttr = AttributeType.builder().name("name").value(newName).build();
-        AdminUpdateUserAttributesRequest request = AdminUpdateUserAttributesRequest.builder()
-                .userPoolId(userPoolId)
-                .username(userId)
-                .userAttributes(nameAttr)
-                .build();
-        cognitoClient.adminUpdateUserAttributes(request);
     }
 
     @Override
