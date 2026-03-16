@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -78,22 +79,30 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                             Room room = roomService.getRoomMetadata(i.getPk());
                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                                     .id(i.getPk())
-                                    .roomName(i.getRoomName())
                                     .roomType(room.getRoomType())
                                     .createdAt(i.getCreatedAt());
-                            // Nếu là DM thì lấy thông tin của user còn lại để hiển thị
                             if (room.getRoomType() == RoomType.DM) {
-                                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk())); // Lấy danh sách userId của các thành viên trong phòng
+                                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
                                 if (memberIds.size() <= 2) {
-                                    // Tìm userId của thành viên còn lại trong phòng
                                     String otherUserId = memberIds.stream()
                                             .filter(id -> !id.equals(userId))
                                             .findFirst()
                                             .orElse(null);
 
                                     if (otherUserId != null) {
-                                        responseBuilder.otherUser(userService.getUserProfile(otherUserId));
+                                        responseBuilder.roomName(userService.getUserProfile(otherUserId).getName());
                                     }
+                                }
+                            } else { // GROUP
+                                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
+                                if (memberIds.size() > 2) {
+                                    String groupName = memberIds.stream()
+                                            .limit(3)
+                                            .map(memberId -> userService.getUserProfile(memberId).getName())
+                                            .collect(Collectors.joining(", "));
+                                    responseBuilder.roomName(groupName);
+                                } else {
+                                    responseBuilder.roomName(i.getRoomName());
                                 }
                             }
 

@@ -16,7 +16,6 @@ import lombok.experimental.FieldDefaults;
 public class RoomResponse {
     String id;
     String roomName;
-    UserResponse otherUser;
     RoomType roomType;
     String createdAt;
 
