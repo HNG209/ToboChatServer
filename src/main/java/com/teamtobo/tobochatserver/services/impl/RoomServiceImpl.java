@@ -1,10 +1,6 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
-import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
@@ -14,13 +10,10 @@ import com.teamtobo.tobochatserver.services.RoomService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.*;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
 import java.util.*;
@@ -33,6 +26,7 @@ public class RoomServiceImpl implements RoomService {
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<Room> roomTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
+
     @Override
     public void createRoom(RoomCreateRequest request, RoomType roomType) {
         // Loại bỏ các ID trùng lặp
@@ -80,54 +74,7 @@ public class RoomServiceImpl implements RoomService {
         }
     }
 
-    @Override
-    public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit) {
-        String gsiPartitionKey = "MEMBER#" + userId;
-        DynamoDbIndex<RoomMember> index = roomMemberTable.index("GSI_RoomMember");
 
-        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
-                .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
-                .limit(limit);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
-            exclusiveStartKey.put("roomPk", AttributeValue.builder().s(gsiPartitionKey).build());
-            exclusiveStartKey.put("roomSk", AttributeValue.builder().s(cursor).build());
-            exclusiveStartKey.put("pk", AttributeValue.builder().s("ROOM#" + cursor.replace("ROOM#", "")).build());
-            exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
-
-            builder.exclusiveStartKey(exclusiveStartKey);
-        }
-
-        // Thực thi Query trên Index
-        SdkIterable<Page<RoomMember>> results = index.query(builder.build());
-        Page<RoomMember> firstPage = results.iterator().next(); // Lấy trang đầu tiên
-
-        if (firstPage == null || firstPage.items().isEmpty()) {
-            return PageResponse.<RoomResponse>builder().items(List.of()).build();
-        }
-
-        // Lấy cursor cho trang tiếp theo
-        String nextCursor = null;
-        if (firstPage.lastEvaluatedKey() != null) {
-            nextCursor = firstPage.lastEvaluatedKey().get("roomSk").s();
-        }
-
-        return PageResponse.<RoomResponse>builder()
-                .items(firstPage.items().stream().map(
-                        i -> {
-                            Room room = getRoomMetadata(i.getPk());
-                            return RoomResponse.builder()
-                                    .id(i.getPk()) // room id
-                                    .roomName(i.getRoomName())
-                                    .roomType(room.getRoomType())
-                                    .createdAt(i.getCreatedAt())
-                                    .build();
-                        }
-                ).toList())
-                .nextCursor(nextCursor)
-                .build();
-    }
 
     @Override
     public List<String> getMembersByRoomId(String roomId) {
@@ -193,6 +140,12 @@ public class RoomServiceImpl implements RoomService {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
     }
+
+    /**
+     * Lấy metadata của phòng (bao gồm roomName, roomType, createdAt, updatedAt) dựa trên roomId
+     * @param roomId
+     * @return
+     */
     public Room getRoomMetadata(String roomId) {
         Key key = Key.builder()
                 .partitionValue(roomId)
@@ -200,5 +153,15 @@ public class RoomServiceImpl implements RoomService {
                 .build();
 
         return roomTable.getItem(key);
+    }
+
+    /**
+     * Lấy tên phòng dựa trên roomId
+     * @param roomId
+     * @return
+     */
+    public String getRoomNameById(String roomId) {
+        Room room = getRoomMetadata(roomId);
+        return room != null ? room.getRoomName() : null;
     }
 }

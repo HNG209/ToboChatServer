@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -15,6 +16,7 @@ import lombok.experimental.FieldDefaults;
 public class RoomResponse {
     String id;
     String roomName;
+    UserResponse otherUser;
     RoomType roomType;
     String createdAt;
 
