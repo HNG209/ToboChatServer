@@ -8,6 +8,7 @@ import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -80,14 +81,14 @@ public class UserServiceImpl implements UserService {
         return user;
     }
 
-    private boolean getFriendStatus(String userId, String otherId) {
-        Friend friend = friendTable.getItem(Key.builder()
-                .partitionValue("USER#" + userId)
-                .sortValue("FRIEND#" + otherId)
-                .build());
-
-        return friend != null;
-    }
+//    private boolean getFriendStatus(String userId, String otherId) {
+//        Friend friend = friendTable.getItem(Key.builder()
+//                .partitionValue("USER#" + userId)
+//                .sortValue("FRIEND#" + otherId)
+//                .build());
+//
+//        return friend != null;
+//    }
 
     @Override
     public UserResponse getUserProfile(String userId) {
@@ -299,7 +300,7 @@ public class UserServiceImpl implements UserService {
                                 .email(item.getEmail())
                                 .avatarUrl(item.getAvatarUrl())
                                 .name(item.getName())
-                                .isFriend(getFriendStatus(userId, Helper.normalizeId(item.getPk())))
+                                .friendStatus(getFriendStatus(userId, Helper.normalizeId(item.getPk())))
                                 .build()
                 ).toList())
                 .nextCursor(nextCursor)
@@ -369,6 +370,36 @@ public class UserServiceImpl implements UserService {
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
+    }
+
+    @Override
+    public FriendStatus getFriendStatus(String userId, String otherId) {
+        // 1. Check có phải là chính mình ko
+        if(userId.equals(otherId)) return FriendStatus.SELF;
+
+        // 2. Check đã là bạn bè chưa
+        Friend friend = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("FRIEND#" + otherId)
+                .build());
+        if (friend != null) return FriendStatus.FRIEND;
+
+        // 3. Check đã gửi lời mời chưa
+        FriendRequest sentRequest = friendRequestTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build());
+        if (sentRequest != null) return FriendStatus.SENT;
+
+        // 4. Check đã nhận lời mời chưa
+        FriendRequest pendingRequest = friendRequestTable.getItem(Key.builder()
+                .partitionValue("USER#" + otherId)
+                .sortValue("REQUEST#" + userId)
+                .build());
+        if (pendingRequest != null) return FriendStatus.PENDING;
+
+        // 5. trường hợp còn lại
+        return FriendStatus.STRANGER;
     }
 
     @Override
