@@ -135,10 +135,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.CANNOT_ADD_SELF);
         }
 
-        // 1. Kiểm tra người được gửi lời mời có tồn tại để lấy fullName của họ
-        User other = getUserById(otherId);
-
-        // 2. Kiểm tra đã là bạn chưa
+        // 1. Kiểm tra đã là bạn chưa
         Friend existingFriend = friendTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("FRIEND#" + otherId)
@@ -147,7 +144,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.ALREADY_FRIENDS);
         }
 
-        // 3. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
+        // 2. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
         FriendRequest existingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("REQUEST#" + otherId)
@@ -156,7 +153,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
 
-        // 4. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
+        // 3. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
         FriendRequest incomingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + otherId)
                 .sortValue("REQUEST#" + userId)
@@ -165,12 +162,10 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
 
-        // 5. Tạo friend request
+        // 4. Tạo friend request
         FriendRequest friendRequest = FriendRequest.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
-                .avatarUrl(other.getAvatarUrl())
-                .name(other.getName())
                 .build();
 
         friendRequestTable.putItem(friendRequest);
@@ -439,12 +434,15 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendRequestResponse>builder()
                 .items(page.items().stream().map(
-                        i -> FriendRequestResponse.builder()
-                                .id(i.getSk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            UserResponse userResponse = getUserProfile(Helper.normalizeId(i.getSk()));
+                            return FriendRequestResponse.builder()
+                                    .id(i.getSk())
+                                    .name(userResponse.getName())
+                                    .avatarUrl(userResponse.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
@@ -485,12 +483,15 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendRequestResponse>builder()
                 .items(firstPage.items().stream().map(
-                        i -> FriendRequestResponse.builder()
-                                .id(i.getPk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            UserResponse userResponse = getUserProfile(Helper.normalizeId(i.getPk()));
+                            return FriendRequestResponse.builder()
+                                    .id(i.getPk())
+                                    .name(userResponse.getName())
+                                    .avatarUrl(userResponse.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
