@@ -1,14 +1,19 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
+import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomService;
+import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -26,7 +31,6 @@ public class RoomServiceImpl implements RoomService {
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<Room> roomTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
-
     @Override
     public void createRoom(RoomCreateRequest request, RoomType roomType) {
         // Loại bỏ các ID trùng lặp
@@ -141,27 +145,13 @@ public class RoomServiceImpl implements RoomService {
         }
     }
 
-    /**
-     * Lấy metadata của phòng (bao gồm roomName, roomType, createdAt, updatedAt) dựa trên roomId
-     * @param roomId
-     * @return
-     */
-    public Room getRoomMetadata(String roomId) {
+    @Override
+    public Room getRoomById(String roomId) {
         Key key = Key.builder()
-                .partitionValue(roomId)
+                .partitionValue("ROOM#" + Helper.normalizeId(roomId))
                 .sortValue("METADATA")
                 .build();
 
         return roomTable.getItem(key);
-    }
-
-    /**
-     * Lấy tên phòng dựa trên roomId
-     * @param roomId
-     * @return
-     */
-    public String getRoomNameById(String roomId) {
-        Room room = getRoomMetadata(roomId);
-        return room != null ? room.getRoomName() : null;
     }
 }

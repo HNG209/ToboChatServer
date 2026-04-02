@@ -11,6 +11,5 @@ import java.util.List;
 public interface RoomService {
     void createRoom(RoomCreateRequest request, RoomType roomType);
     List<String> getMembersByRoomId(String roomId);
-    String getRoomNameById(String roomId);
-    Room getRoomMetadata(String roomId);
+    Room getRoomById(String roomId);
 }

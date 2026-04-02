@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

@@ -76,7 +76,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .items(firstPage.items().stream().map(
                         i -> {
                             // Lấy metadata của phòng để lấy thông tin roomType
-                            Room room = roomService.getRoomMetadata(i.getPk());
+                            Room room = roomService.getRoomById(i.getPk());
                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                                     .id(i.getPk())
                                     .roomType(room.getRoomType())
