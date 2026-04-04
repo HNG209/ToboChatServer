@@ -112,6 +112,53 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    public MessageResponse getLatestMessage(String userId, String roomId) {
+        try {
+            String pk = "ROOM#" + roomId;
+
+            // 1. Tạo điều kiện tìm kiếm
+            Key searchKey = Key.builder()
+                    .partitionValue(pk)
+                    .sortValue("MSG#")
+                    .build();
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(searchKey);
+
+            // 2. Lấy 1 dòng mới nhất
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false) // Lấy từ dưới lên (Z-A)
+                    .limit(1)
+                    .build();
+
+            // 3. Thực thi truy vấn
+            Message latestMessage = messageTable.query(request)
+                    .items() // Lấy luồng dữ liệu
+                    .stream()
+                    .findFirst() // Lấy phần tử đầu tiên của trang đầu tiên
+                    .orElse(null);
+
+            // 4. Nếu phòng chưa có tin nhắn nào
+            if (latestMessage == null) {
+                return null;
+            }
+
+            // 5. Map sang DTO
+            String messageId = Helper.normalizeId(latestMessage.getSk());
+
+            return MessageResponse.builder()
+                    .id(messageId)
+                    .content(latestMessage.getContent())
+                    .createdAt(latestMessage.getCreatedAt() != null ? latestMessage.getCreatedAt() : messageId)
+                    .isSelf(latestMessage.getSenderId().equals(userId))
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Lỗi khi lấy tin nhắn mới nhất phòng {}: {}", roomId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
     public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
             String now = Instant.now().toString();

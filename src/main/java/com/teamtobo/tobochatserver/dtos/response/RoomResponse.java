@@ -17,6 +17,7 @@ public class RoomResponse {
     String id;
     String roomName;
     RoomType roomType;
+    MessageResponse latestMessage;
     String createdAt;
 
     // Normalize id from pk

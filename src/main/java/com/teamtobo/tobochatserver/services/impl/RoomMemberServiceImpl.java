@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -33,6 +34,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
     private final RoomService roomService;
     private final UserService userService;
+    private final ChatService chatService;
 
     /**
      * Lấy danh sách phòng đã tham gia của user với pagination
@@ -79,19 +81,17 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                             Room room = roomService.getRoomById(i.getPk());
                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                                     .id(i.getPk())
+                                    // tin nhắn mới nhất để hiển thị lên chat inbox
+                                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
                                     .roomType(room.getRoomType())
                                     .createdAt(i.getCreatedAt());
                             if (room.getRoomType() == RoomType.DM) {
                                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
                                 if (memberIds.size() <= 2) {
-                                    String otherUserId = memberIds.stream()
+                                    memberIds.stream()
                                             .filter(id -> !id.equals(userId))
-                                            .findFirst()
-                                            .orElse(null);
+                                            .findFirst().ifPresent(otherUserId -> responseBuilder.roomName(userService.getUserProfile(otherUserId).getName()));
 
-                                    if (otherUserId != null) {
-                                        responseBuilder.roomName(userService.getUserProfile(otherUserId).getName());
-                                    }
                                 }
                             } else { // GROUP
                                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
