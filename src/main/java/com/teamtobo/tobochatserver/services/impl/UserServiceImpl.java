@@ -21,9 +21,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
-import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -32,20 +30,13 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
-import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminUpdateUserAttributesRequest;
-import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetUrlRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -97,6 +88,7 @@ public class UserServiceImpl implements UserService {
                 .id(user.getPk())
                 .name(user.getName())
                 .avatarUrl(user.getAvatarUrl())
+                .dob(user.getDob())
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
                 .build();
@@ -107,21 +99,26 @@ public class UserServiceImpl implements UserService {
         User user = getUserById(userId);
         boolean isChanged = false;
 
-        // 2. Xử lý Upload Avatar (Nếu có gửi file)
-        if (request.getAvatar() != null && !request.getAvatar().isEmpty()) {
-            String s3Url = s3Helper.uploadFileToS3(userId, request.getAvatar());
-            user.setAvatarUrl(s3Url); // Cập nhật URL mới vào entity
-            isChanged = true;
-        }
+        // 1. Update name
+        if (request.getName() != null
+                && !request.getName().isBlank()
+                && !request.getName().equals(user.getName())) {
 
-        // 3. Xử lý đổi tên (Nếu có gửi tên mới)
-        if (request.getName() != null && !request.getName().isBlank() && !request.getName().equals(user.getName())) {
             user.setName(request.getName());
-            cognitoHelper.syncNameToCognito(userId, request.getName()); // Đồng bộ sang Cognito
+            cognitoHelper.syncNameToCognito(userId, request.getName());
             isChanged = true;
         }
 
-        // 4. Lưu ngược lại DynamoDB
+        // 2. Update DOB
+        if (request.getDob() != null
+                && !request.getDob().isBlank()
+                && !request.getDob().equals(user.getDob())) {
+
+            user.setDob(request.getDob());
+            isChanged = true;
+        }
+
+        // 3. Lưu ngược lại DynamoDB
         if (isChanged) {
             userTable.updateItem(user);
         }
@@ -623,5 +620,34 @@ public class UserServiceImpl implements UserService {
                         )
                         .build()
         );
+    }
+
+    @Override
+    public PresignedUploadResponse getAvatarUploadUrl(String userId, String contentType) {
+        // Có thể thêm validate khác nếu cần (ví dụ: user tồn tại)
+        return s3Helper.generatePresignedUploadUrl(userId, contentType);
+    }
+
+    @Override
+    public UserResponse updateAvatar(String userId, String avatarUrl) {
+
+        if (avatarUrl == null || avatarUrl.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
+        }
+
+        // Chỉ update trường avatarUrl, không đụng đến các trường khác
+        User user = getUserById(userId);           // Load entity
+
+        user.setAvatarUrl(avatarUrl);              // Chỉ thay đổi avatarUrl
+
+        userTable.updateItem(user);                // Update vào DynamoDB
+
+        // Trả về UserResponse chỉ với các trường cần thiết
+        return UserResponse.builder()
+                .id(user.getPk())
+                .name(user.getName())
+                .avatarUrl(user.getAvatarUrl())    // avatarUrl đã được cập nhật
+                .email(user.getEmail())            // giữ nguyên
+                .build();
     }
 }

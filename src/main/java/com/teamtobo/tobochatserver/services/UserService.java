@@ -3,8 +3,6 @@ package com.teamtobo.tobochatserver.services;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
-import com.teamtobo.tobochatserver.entities.Friend;
-import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
@@ -31,4 +29,8 @@ public interface UserService {
     MfaInitResponse initEnableMFA(String userId, String password);
     void confirmEnableMFA(String userId, String otp);
     void disableMFA(String userId, String password);
+
+    PresignedUploadResponse getAvatarUploadUrl(String fileName, String name);
+
+    UserResponse updateAvatar(String userId, String avatarUrl);
 }

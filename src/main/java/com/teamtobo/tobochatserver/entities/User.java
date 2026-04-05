@@ -18,6 +18,7 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 public class User extends BaseEntity { // Không lưu mật khẩu, để Cognito lưu
     String name;
     String email;
+    String dob;
     String avatarUrl;
 
     String searchPk;

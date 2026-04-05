@@ -1,11 +1,14 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.AvatarUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaConfirmRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -51,18 +54,14 @@ public class UserController {
     }
 
     @Operation(summary = "Cập nhật thông tin người dùng hiện tại")
-    @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PutMapping("/me")
     public ResponseEntity<User> updateProfile(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestPart(value = "name", required = false) String name,
-            @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
+            @RequestBody UserUpdateRequest request) {
 
         String userId = jwt.getSubject();
 
-        User updatedUser = userService.updateUserProfile(userId, UserUpdateRequest.builder()
-                .name(name)
-                .avatar(avatar)
-                .build());
+        User updatedUser = userService.updateUserProfile(userId, request);
         return ResponseEntity.ok(updatedUser);
     }
 
@@ -116,6 +115,35 @@ public class UserController {
 
         userService.disableMFA(userId, request.getPassword());
         return ResponseEntity.noContent().build();
+    }
+
+
+    @Operation(summary = "Lấy presigned URL ")
+    @PostMapping("/avatar/upload-url")
+    public PresignedUploadResponse getUploadUrl(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String contentType) {
+
+        String userId = jwt.getSubject();
+
+        // Nên validate ở đây một lần nữa cho an toàn
+        if (!"image/jpeg".equals(contentType) && !"image/png".equals(contentType)) {
+            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
+        }
+
+        return userService.getAvatarUploadUrl(userId, contentType);
+    }
+
+    @Operation(summary = "Cập nhật URL avatar vào profile người dùng")
+    @PostMapping("/avatar")                    // ← Đổi thành POST theo khuyến nghị
+    public UserResponse updateAvatar(@RequestBody AvatarUpdateRequest request,
+                                     @AuthenticationPrincipal Jwt jwt) {
+
+        String userId = jwt.getSubject();
+
+        UserResponse response = userService.updateAvatar(userId, request.getAvatarUrl());
+
+        return response;
     }
 
 }
