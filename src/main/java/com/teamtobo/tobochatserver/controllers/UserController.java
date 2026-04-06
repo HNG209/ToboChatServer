@@ -119,7 +119,7 @@ public class UserController {
 
 
     @Operation(summary = "Lấy presigned URL ")
-    @PostMapping("/avatar/upload-url")
+    @GetMapping("/avatar/upload-url")
     public PresignedUploadResponse getUploadUrl(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam String contentType) {
@@ -134,16 +134,6 @@ public class UserController {
         return userService.getAvatarUploadUrl(userId, contentType);
     }
 
-    @Operation(summary = "Cập nhật URL avatar vào profile người dùng")
-    @PostMapping("/avatar")                    // ← Đổi thành POST theo khuyến nghị
-    public UserResponse updateAvatar(@RequestBody AvatarUpdateRequest request,
-                                     @AuthenticationPrincipal Jwt jwt) {
 
-        String userId = jwt.getSubject();
-
-        UserResponse response = userService.updateAvatar(userId, request.getAvatarUrl());
-
-        return response;
-    }
 
 }

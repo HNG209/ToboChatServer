@@ -10,7 +10,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
 public class AwsConfig {
-    private static final Region REGION = Region.AP_SOUTHEAST_1;
+    private static final Region REGION = Region.US_EAST_1;
 
     @Bean
     public CognitoIdentityProviderClient cognitoIdentityProviderClient() {

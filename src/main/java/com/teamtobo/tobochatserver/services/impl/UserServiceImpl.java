@@ -628,26 +628,5 @@ public class UserServiceImpl implements UserService {
         return s3Helper.generatePresignedUploadUrl(userId, contentType);
     }
 
-    @Override
-    public UserResponse updateAvatar(String userId, String avatarUrl) {
 
-        if (avatarUrl == null || avatarUrl.isBlank()) {
-            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
-        }
-
-        // Chỉ update trường avatarUrl, không đụng đến các trường khác
-        User user = getUserById(userId);           // Load entity
-
-        user.setAvatarUrl(avatarUrl);              // Chỉ thay đổi avatarUrl
-
-        userTable.updateItem(user);                // Update vào DynamoDB
-
-        // Trả về UserResponse chỉ với các trường cần thiết
-        return UserResponse.builder()
-                .id(user.getPk())
-                .name(user.getName())
-                .avatarUrl(user.getAvatarUrl())    // avatarUrl đã được cập nhật
-                .email(user.getEmail())            // giữ nguyên
-                .build();
-    }
 }

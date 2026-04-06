@@ -32,5 +32,5 @@ public interface UserService {
 
     PresignedUploadResponse getAvatarUploadUrl(String fileName, String name);
 
-    UserResponse updateAvatar(String userId, String avatarUrl);
+
 }

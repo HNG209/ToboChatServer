@@ -96,8 +96,6 @@ public class S3Helper {
 
         return PresignedUploadResponse.builder()
                 .url(presignedRequest.url().toString())
-                .fields(null)
-                .fileUrl("https://" + bucketName + ".s3.amazonaws.com/" + key)
                 .build();
     }
 }
