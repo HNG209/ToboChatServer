@@ -12,6 +12,7 @@ import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -20,7 +21,12 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -33,6 +39,9 @@ public class ChatServiceImpl implements ChatService {
     private final SocketIOServer socketIOServer;
     private final RoomService roomService;
     private final UserService userService;
+    private final S3Presigner s3Presigner;
+    @Value("${aws.s3.bucketName}")
+    private String bucketName;
 
     @Override
     public PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit) {
@@ -173,6 +182,7 @@ public class ChatServiceImpl implements ChatService {
                     .pk(pk)
                     .senderId(senderId)
                     .content(request.getContent())
+                    .attachments(request.getAttachments())
                     .build();
 
             // 1. Lưu message
@@ -202,5 +212,25 @@ public class ChatServiceImpl implements ChatService {
         catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public String generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
+        String objectKey = "chat/attachments/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(objectKey)
+                .contentType(contentType)
+                .build();
+
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(10)) // URL có hạn trong 10 phút
+                .putObjectRequest(putObjectRequest)
+                .build();
+
+        PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
+
+        return presignedRequest.url().toString();
     }
 }

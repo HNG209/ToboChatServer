@@ -44,4 +44,15 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Tin nhắn đã được lưu và đưa vào luồng gửi Socket");
     }
+
+    @GetMapping("/upload/{roomId}")
+    public ApiResponse<String> getAttachmentPresignedUrl(
+            @PathVariable String roomId,
+            @RequestParam String fileName,
+            @RequestParam String contentType
+    ) {
+        return ApiResponse.<String>builder()
+                .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType))
+                .build();
+    }
 }

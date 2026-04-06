@@ -1,8 +1,11 @@
 package com.teamtobo.tobochatserver.dtos.request;
 
+import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+
+import java.util.List;
 
 @Data
 @AllArgsConstructor
@@ -11,5 +14,6 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SendMessageRequest {
     String content;
+    List<Attachment> attachments;
     MessageType messageType;
 }
