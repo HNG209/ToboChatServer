@@ -1,16 +1,22 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.CognitoHelper;
 import com.teamtobo.tobochatserver.utils.Helper;
+import com.teamtobo.tobochatserver.utils.S3Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,7 +57,10 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<FriendRequest> friendRequestTable;
     private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
-    private final S3Client s3Client;
+    private final RoomService roomService;
+
+    private final S3Helper s3Helper;
+    private final CognitoHelper cognitoHelper;
     private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
 
     @Value("${aws.cognito.userPoolId}")
@@ -59,10 +68,6 @@ public class UserServiceImpl implements UserService {
 
     @Value("${aws.cognito.appClientId}")
     private String appClientId;
-
-    @Value("${aws.s3.bucketName}")
-    private String bucketName;
-
     private User getUserById(String userId) {
         // Query DynamoDB bằng PK (USER#id) và SK (PROFILE)
         User user = userTable.getItem(Key.builder()
@@ -76,14 +81,14 @@ public class UserServiceImpl implements UserService {
         return user;
     }
 
-    private boolean getFriendStatus(String userId, String otherId) {
-        Friend friend = friendTable.getItem(Key.builder()
-                .partitionValue("USER#" + userId)
-                .sortValue("FRIEND#" + otherId)
-                .build());
-
-        return friend != null;
-    }
+//    private boolean getFriendStatus(String userId, String otherId) {
+//        Friend friend = friendTable.getItem(Key.builder()
+//                .partitionValue("USER#" + userId)
+//                .sortValue("FRIEND#" + otherId)
+//                .build());
+//
+//        return friend != null;
+//    }
 
     @Override
     public UserResponse getUserProfile(String userId) {
@@ -104,7 +109,7 @@ public class UserServiceImpl implements UserService {
 
         // 2. Xử lý Upload Avatar (Nếu có gửi file)
         if (request.getAvatar() != null && !request.getAvatar().isEmpty()) {
-            String s3Url = uploadFileToS3(userId, request.getAvatar());
+            String s3Url = s3Helper.uploadFileToS3(userId, request.getAvatar());
             user.setAvatarUrl(s3Url); // Cập nhật URL mới vào entity
             isChanged = true;
         }
@@ -112,7 +117,7 @@ public class UserServiceImpl implements UserService {
         // 3. Xử lý đổi tên (Nếu có gửi tên mới)
         if (request.getName() != null && !request.getName().isBlank() && !request.getName().equals(user.getName())) {
             user.setName(request.getName());
-            syncNameToCognito(userId, request.getName()); // Đồng bộ sang Cognito
+            cognitoHelper.syncNameToCognito(userId, request.getName()); // Đồng bộ sang Cognito
             isChanged = true;
         }
 
@@ -131,10 +136,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.CANNOT_ADD_SELF);
         }
 
-        // 1. Kiểm tra người được gửi lời mời có tồn tại để lấy fullName của họ
-        User other = getUserById(otherId);
-
-        // 2. Kiểm tra đã là bạn chưa
+        // 1. Kiểm tra đã là bạn chưa
         Friend existingFriend = friendTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("FRIEND#" + otherId)
@@ -143,7 +145,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.ALREADY_FRIENDS);
         }
 
-        // 3. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
+        // 2. Kiểm tra Friend Request đã gửi chưa (userId -> otherId)
         FriendRequest existingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
                 .sortValue("REQUEST#" + otherId)
@@ -152,7 +154,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
 
-        // 4. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
+        // 3. Kiểm tra Friend Request đã nhận chưa (otherId -> userId)
         FriendRequest incomingRequest = friendRequestTable.getItem(Key.builder()
                 .partitionValue("USER#" + otherId)
                 .sortValue("REQUEST#" + userId)
@@ -161,14 +163,10 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
 
-        // 5. Tạo friend request
+        // 4. Tạo friend request
         FriendRequest friendRequest = FriendRequest.builder()
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
-                .gsi1pk("REQUEST#" + otherId)
-                .gsi1sk("USER#" + userId)
-                .avatarUrl(other.getAvatarUrl())
-                .name(other.getName())
                 .build();
 
         friendRequestTable.putItem(friendRequest);
@@ -236,6 +234,13 @@ public class UserServiceImpl implements UserService {
                         .addedAt(now)
                         .build())
         );
+
+        roomService.createRoom(
+                RoomCreateRequest.builder()
+                        .memberIds(List.of(userId, request.getFromUser()))
+                        .build(),
+                RoomType.DM
+        );
     }
 
     @Override
@@ -295,46 +300,11 @@ public class UserServiceImpl implements UserService {
                                 .email(item.getEmail())
                                 .avatarUrl(item.getAvatarUrl())
                                 .name(item.getName())
-                                .isFriend(getFriendStatus(userId, Helper.normalizeId(item.getPk())))
+                                .friendStatus(getFriendStatus(userId, Helper.normalizeId(item.getPk())))
                                 .build()
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
-    }
-
-    private String uploadFileToS3(String userId, MultipartFile file) {
-        // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
-        String fileName = "users/" + userId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
-
-        try {
-            PutObjectRequest putOb = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .contentType(file.getContentType())
-                    .build();
-
-            // Upload lên S3
-            s3Client.putObject(putOb, RequestBody.fromBytes(file.getBytes()));
-
-            // Lấy URL trả về
-            return s3Client.utilities().getUrl(GetUrlRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .build()).toExternalForm();
-
-        } catch (IOException e) {
-            throw new AppException(ErrorCode.UPLOAD_ERROR);
-        }
-    }
-
-    private void syncNameToCognito(String userId, String newName) {
-        AttributeType nameAttr = AttributeType.builder().name("name").value(newName).build();
-        AdminUpdateUserAttributesRequest request = AdminUpdateUserAttributesRequest.builder()
-                .userPoolId(userPoolId)
-                .username(userId)
-                .userAttributes(nameAttr)
-                .build();
-        cognitoClient.adminUpdateUserAttributes(request);
     }
 
     @Override
@@ -403,6 +373,36 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public FriendStatus getFriendStatus(String userId, String otherId) {
+        // 1. Check có phải là chính mình ko
+        if(userId.equals(otherId)) return FriendStatus.SELF;
+
+        // 2. Check đã là bạn bè chưa
+        Friend friend = friendTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("FRIEND#" + otherId)
+                .build());
+        if (friend != null) return FriendStatus.FRIEND;
+
+        // 3. Check đã gửi lời mời chưa
+        FriendRequest sentRequest = friendRequestTable.getItem(Key.builder()
+                .partitionValue("USER#" + userId)
+                .sortValue("REQUEST#" + otherId)
+                .build());
+        if (sentRequest != null) return FriendStatus.SENT;
+
+        // 4. Check đã nhận lời mời chưa
+        FriendRequest pendingRequest = friendRequestTable.getItem(Key.builder()
+                .partitionValue("USER#" + otherId)
+                .sortValue("REQUEST#" + userId)
+                .build());
+        if (pendingRequest != null) return FriendStatus.PENDING;
+
+        // 5. trường hợp còn lại
+        return FriendStatus.STRANGER;
+    }
+
+    @Override
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type,
                                                                  String userId,
                                                                  String cursor,
@@ -465,12 +465,15 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendRequestResponse>builder()
                 .items(page.items().stream().map(
-                        i -> FriendRequestResponse.builder()
-                                .id(i.getSk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            UserResponse userResponse = getUserProfile(Helper.normalizeId(i.getSk()));
+                            return FriendRequestResponse.builder()
+                                    .id(i.getSk())
+                                    .name(userResponse.getName())
+                                    .avatarUrl(userResponse.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
@@ -511,12 +514,15 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendRequestResponse>builder()
                 .items(firstPage.items().stream().map(
-                        i -> FriendRequestResponse.builder()
-                                .id(i.getPk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            UserResponse userResponse = getUserProfile(Helper.normalizeId(i.getPk()));
+                            return FriendRequestResponse.builder()
+                                    .id(i.getPk())
+                                    .name(userResponse.getName())
+                                    .avatarUrl(userResponse.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();

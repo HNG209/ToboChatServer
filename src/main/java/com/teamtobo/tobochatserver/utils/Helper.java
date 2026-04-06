@@ -2,6 +2,13 @@ package com.teamtobo.tobochatserver.utils;
 
 public class Helper {
     public static String normalizeId(String id) {
-        return id.split("#")[1]; // USER#001, FRIEND#001... -> 001
+        if (id == null || id.isEmpty()) {
+            return id;
+        }
+
+        String[] parts = id.split("#");
+
+        // Nếu không có dấu #, trả về nguyên vẹn chuỗi ban đầu.
+        return parts.length > 1 ? parts[1] : id;
     }
 }

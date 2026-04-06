@@ -1,7 +1,8 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -12,13 +13,14 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class UserResponse {
-    String id; // pk
-    String name;
-    String email;
-    String avatarUrl;
+public class RoomResponse {
+    String id;
+    String roomName;
+    RoomType roomType;
+    MessageResponse latestMessage;
     String createdAt;
-    FriendStatus friendStatus;
+
+    // Normalize id from pk
     public String getId() {
         return Helper.normalizeId(this.id);
     }

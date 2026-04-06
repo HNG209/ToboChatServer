@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -15,8 +16,8 @@ public class FriendRequest extends BaseEntity {
     String name;
     String avatarUrl;
     @Override
-    public String getEntityType() {
-        return "FRIEND_REQUEST";
+    public EntityType getEntityType() {
+        return EntityType.FRIEND_REQUEST;
     }
 
     String gsi1pk;
@@ -31,8 +32,8 @@ public class FriendRequest extends BaseEntity {
     public String getSk() { return super.getSk(); } // REQUEST#Receiver
 
     @DynamoDbSecondaryPartitionKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1pk() { return gsi1pk; } // REQUEST#Receiver
+    public String getGsi1pk() { return super.getSk(); } // REQUEST#Receiver
 
     @DynamoDbSecondarySortKey(indexNames = "GSI_FriendRequest")
-    public String getGsi1sk() { return gsi1sk; } // USER#Sender
+    public String getGsi1sk() { return super.getPk(); } // USER#Sender
 }
