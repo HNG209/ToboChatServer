@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -20,7 +21,10 @@ import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -40,8 +44,12 @@ public class ChatServiceImpl implements ChatService {
     private final RoomService roomService;
     private final UserService userService;
     private final S3Presigner s3Presigner;
+    private final S3Client s3Client;
+
     @Value("${aws.s3.bucketName}")
     private String bucketName;
+    private static final Region REGION = Region.AP_SOUTHEAST_1;
+
 
     @Override
     public PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit) {
@@ -170,6 +178,36 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
+            // Xử lý attachments
+            if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+                for (Attachment attachment : request.getAttachments()) {
+
+                    // 1. Lấy URL cũ do Frontend gửi lên (chứa thư mục temp-drafts)
+                    String oldUrl = attachment.getFileUrl();
+
+                    // 2. Bóc tách Object Key từ URL
+                    // Giả sử URL: https://my-bucket.s3.ap-southeast-1.amazonaws.com/temp-drafts/abc.jpg
+                    // Ta cần lấy đoạn: temp-drafts/abc.jpg
+                    String oldKey = oldUrl.substring(oldUrl.indexOf("temp-drafts/"));
+
+                    // 3. Tạo Key mới ở thư mục chính thức
+                    String newKey = oldKey.replace("temp-drafts/", "attachments/");
+
+                    // 4. Copy file sang thư mục mới
+                    CopyObjectRequest copyReq = CopyObjectRequest.builder()
+                            .sourceBucket(bucketName)
+                            .sourceKey(oldKey)
+                            .destinationBucket(bucketName)
+                            .destinationKey(newKey)
+                            .build();
+                    s3Client.copyObject(copyReq);
+
+                    // 5. Cập nhật lại URL mới cho Attachment để chuẩn bị lưu vào DynamoDB
+                    String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s", bucketName, REGION.toString(), newKey);
+                    attachment.setFileUrl(finalUrl);
+                }
+            }
+
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
 
@@ -201,6 +239,7 @@ public class ChatServiceImpl implements ChatService {
                                             .id(Helper.normalizeId(message.getSk()))
                                             .roomId(roomId)
                                             .content(message.getContent())
+                                            .attachments(request.getAttachments())
                                             .user(userService.getUserProfile(senderId))
                                             .messageType(message.getMessageType())
                                             .createdAt(message.getCreatedAt())
@@ -216,7 +255,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public String generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
-        String objectKey = "chat/attachments/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
+        String objectKey = "temp-drafts/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
