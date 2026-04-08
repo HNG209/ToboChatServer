@@ -9,7 +9,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 
 @Configuration
 public class AwsConfig {
-    private static final Region REGION = Region.AP_SOUTHEAST_1;
+    private static final Region REGION = Region.US_EAST_1;
 
     @Bean
     public CognitoIdentityProviderClient cognitoIdentityProviderClient() {
