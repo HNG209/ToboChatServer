@@ -60,8 +60,8 @@ public class ChatServiceImpl implements ChatService {
 
                 QueryEnhancedRequest request = QueryEnhancedRequest.builder()
                         .queryConditional(queryConditional)
-                        .scanIndexForward(false)
-                        .limit(limit) // mỗi lần query 10
+                        .scanIndexForward(false)  // newest first
+                        .limit(Math.max(10, limit * 2))  // đọc dư một chút để bù filter (tùy tỷ lệ delete)
                         .exclusiveStartKey(lastEvaluatedKey)
                         .build();
 
@@ -70,24 +70,18 @@ public class ChatServiceImpl implements ChatService {
                         .findFirst()
                         .orElse(null);
 
-                if (page == null) break;
+                if (page == null || page.items().isEmpty()) break;
 
                 for (Message msg : page.items()) {
-
-                    // 🚨 FILTER message đã xoá phía tôi
                     if (msg.getDeletedByUserIds() != null &&
                             msg.getDeletedByUserIds().contains(userId)) {
                         continue;
                     }
-
                     results.add(mapToMessageResponse(msg, userId));
-
                     if (results.size() == limit) break;
                 }
 
                 lastEvaluatedKey = page.lastEvaluatedKey();
-
-                // hết dữ liệu
                 if (lastEvaluatedKey == null) break;
             }
 
@@ -217,28 +211,70 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void deleteMessage(String messageId, String roomId, String userId) {
         try {
-            String pk = "ROOM#" + roomId;
-            String sk = "MSG#" + messageId;
+            String pk = "ROOM#" + roomId + "_" + userId;
 
-            Message message = messageTable.getItem(Key.builder()
-                    .partitionValue(pk)
-                    .sortValue(sk)
-                    .build());
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                    Key.builder()
+                            .partitionValue(pk)
+                            .sortValue("MSG#")
+                            .build()
+            );
 
-            if (message == null) return;
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false)
+                    .limit(50)
+                    .build();
 
-            if (message.getDeletedByUserIds() == null) {
-                message.setDeletedByUserIds(new ArrayList<>());
+            List<Message> messages = messageTable.query(request)
+                    .stream()
+                    .flatMap(page -> page.items().stream())
+                    .toList();
+
+            Message foundMessage = null;
+            for (Message msg : messages) {
+                String sk = msg.getSk();
+                if (sk != null && sk.contains(messageId)) {
+                    foundMessage = msg;
+                    break;
+                }
             }
 
-            if (!message.getDeletedByUserIds().contains(userId)) {
-                message.getDeletedByUserIds().add(userId);
+            if (foundMessage == null) {
+                return;
             }
 
-            messageTable.updateItem(message);
+            // Soft delete
+            List<String> deletedList = new ArrayList<>(
+                    foundMessage.getDeletedByUserIds() != null
+                            ? foundMessage.getDeletedByUserIds()
+                            : new ArrayList<>()
+            );
+
+            if (!deletedList.contains(userId)) {
+                deletedList.add(userId);
+            }
+
+            Message updatedMessage = Message.builder()
+                    .pk(foundMessage.getPk())
+                    .sk(foundMessage.getSk())
+                    .content(foundMessage.getContent())
+                    .senderId(foundMessage.getSenderId())
+                    .messageType(foundMessage.getMessageType())
+                    .createdAt(foundMessage.getCreatedAt())
+                    .deletedByUserIds(deletedList)
+                    .build();
+
+            messageTable.updateItem(updatedMessage);
+
+            log.info("User {} đã thu hồi tin nhắn thành công", userId);
+
+            // Realtime
+            Map<String, Object> deleteData = Map.of("roomId", roomId, "messageId", messageId);
+            socketIOServer.getRoomOperations(userId).sendEvent("message_deleted", deleteData);
 
         } catch (Exception e) {
-            log.error("Delete message error: {}", e.getMessage());
+            log.error("Lỗi deleteMessage", e);
             throw new RuntimeException("Không thể xoá tin nhắn", e);
         }
     }
