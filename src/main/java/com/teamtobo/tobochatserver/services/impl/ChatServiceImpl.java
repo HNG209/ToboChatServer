@@ -13,7 +13,6 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
@@ -71,16 +70,15 @@ public class ChatServiceImpl implements ChatService {
 
             if (messagePage != null) {
                 // 5. Map dữ liệu từ Entity sang DTO
-                messageResponses = messagePage.items().stream().map(msg -> {
-                    // Lấy ID tin nhắn:
-                    // Nếu Entity Message của bạn có trường ID riêng (như messageId), hãy dùng msg.getMessageId()
-                    // Nếu không, ta có thể cắt bỏ chữ "MSG#" để lấy đoạn thời gian làm ID tạm thời cho Frontend render
+                messageResponses = messagePage.items().stream()
+                        // tin nhắn đã xoá ở người dùng đó thì không trả về
+                        .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
+                        .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
 
                     // Kiểm tra xem tin nhắn có phải do user đang gọi API gửi không
                     boolean isSelf = userId.equals(msg.getSenderId());
 
-                    // TODO: Tối ưu truy vấn
                     UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
 
                     // Build MessageResponse
@@ -90,7 +88,6 @@ public class ChatServiceImpl implements ChatService {
                             .createdAt(msg.getCreatedAt())
                             .isSelf(isSelf)
                             .user(userResponse)
-                            // .messageType(msg.getMessageType()) // Bật lên nếu Entity có trường này
                             .build();
                 }).collect(Collectors.toList());
 
@@ -173,6 +170,7 @@ public class ChatServiceImpl implements ChatService {
                     .pk(pk)
                     .senderId(senderId)
                     .content(request.getContent())
+                    .deletedByUserIds(new ArrayList<>())
                     .build();
 
             // 1. Lưu message
@@ -201,6 +199,80 @@ public class ChatServiceImpl implements ChatService {
         }
         catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+    @Override
+    public void deleteMessage(String messageId, String roomId, String userId) {
+        try {
+            String cleanRoomId = roomId.contains("_")
+                    ? roomId.substring(0, roomId.indexOf("_"))
+                    : roomId;
+
+            String pk = "ROOM#" + cleanRoomId + "_" + userId;
+
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                    Key.builder()
+                            .partitionValue(pk)
+                            .sortValue("MSG#")
+                            .build()
+            );
+
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false)
+                    .limit(30)
+                    .build();
+
+            List<Message> messages = messageTable.query(request)
+                    .stream()
+                    .flatMap(page -> page.items().stream())
+                    .toList();
+
+
+            Message foundMessage = null;
+            for (Message msg : messages) {
+                String sk = msg.getSk();
+                if (sk != null && sk.contains(messageId)) {
+                    foundMessage = msg;
+                    break;
+                }
+            }
+
+            if (foundMessage == null)
+                return;
+
+            // Soft delete
+            List<String> deletedList = new ArrayList<>(
+                    foundMessage.getDeletedByUserIds() != null
+                            ? foundMessage.getDeletedByUserIds()
+                            : new ArrayList<>()
+            );
+
+            if (!deletedList.contains(userId)) {
+                deletedList.add(userId);
+            }
+
+            Message updatedMessage = Message.builder()
+                    .pk(foundMessage.getPk())
+                    .sk(foundMessage.getSk())
+                    .content(foundMessage.getContent())
+                    .senderId(foundMessage.getSenderId())
+                    .messageType(foundMessage.getMessageType())
+                    .createdAt(foundMessage.getCreatedAt())
+                    .deletedByUserIds(deletedList)
+                    .build();
+
+            messageTable.updateItem(updatedMessage);
+
+            // Gửi sự kiện cho chính mình (xoá ngay lập tức nếu đang đăng nhập trên thiết bị khác)
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("delete_message", MessageResponse.builder()
+                            .id(messageId)
+                            .roomId(roomId)
+                            .build());
+
+        } catch (Exception e) {
+            throw new RuntimeException("Không thể xoá tin nhắn", e);
         }
     }
 }

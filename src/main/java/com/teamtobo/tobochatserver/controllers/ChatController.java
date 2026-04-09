@@ -44,4 +44,19 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Tin nhắn đã được lưu và đưa vào luồng gửi Socket");
     }
+
+    @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
+    public ApiResponse<?> deleteMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @PathVariable String messageId
+    ) {
+        String userId = jwt.getSubject();
+
+        chatService.deleteMessage(messageId, roomId, userId);
+
+        return ApiResponse.builder()
+                .message("Đã xoá tin nhắn phía bạn")
+                .build();
+    }
 }
