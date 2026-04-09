@@ -69,7 +69,9 @@ public enum ErrorCode {
     PERMISSION_IN_USE(40021, "[40021]Cannot delete Permission because it is currently assigned to a Role", HttpStatus.BAD_REQUEST),
 
     ROOM_INVALID(411111, "[411111] Room invalid", HttpStatus.BAD_REQUEST),
-    ROOM_CREATE_ERROR(422222, "[422222] Room create error", HttpStatus.INTERNAL_SERVER_ERROR)
+    ROOM_CREATE_ERROR(422222, "[422222] Room create error", HttpStatus.INTERNAL_SERVER_ERROR),
+
+    INVALID_AVATAR_URL(6001, "[6001] Invalid avatar url", HttpStatus.BAD_REQUEST),
     ;
 
 
