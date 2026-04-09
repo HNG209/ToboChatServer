@@ -211,7 +211,14 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void deleteMessage(String messageId, String roomId, String userId) {
         try {
-            String pk = "ROOM#" + roomId + "_" + userId;
+            String cleanRoomId = roomId.contains("_")
+                    ? roomId.substring(0, roomId.indexOf("_"))
+                    : roomId;
+
+            String pk = "ROOM#" + cleanRoomId + "_" + userId;
+
+            log.info("=== DELETE START === Original roomId: {} | Clean roomId: {} | UserId: {} | PK: {}",
+                    roomId, cleanRoomId, userId, pk);
 
             QueryConditional queryConditional = QueryConditional.sortBeginsWith(
                     Key.builder()
@@ -223,13 +230,14 @@ public class ChatServiceImpl implements ChatService {
             QueryEnhancedRequest request = QueryEnhancedRequest.builder()
                     .queryConditional(queryConditional)
                     .scanIndexForward(false)
-                    .limit(50)
+                    .limit(30)
                     .build();
 
             List<Message> messages = messageTable.query(request)
                     .stream()
                     .flatMap(page -> page.items().stream())
                     .toList();
+
 
             Message foundMessage = null;
             for (Message msg : messages) {
@@ -241,6 +249,7 @@ public class ChatServiceImpl implements ChatService {
             }
 
             if (foundMessage == null) {
+                messages.stream().limit(5).forEach(m -> log.warn("   - {}", m.getSk()));
                 return;
             }
 
@@ -267,14 +276,8 @@ public class ChatServiceImpl implements ChatService {
 
             messageTable.updateItem(updatedMessage);
 
-            log.info("User {} đã thu hồi tin nhắn thành công", userId);
-
-            // Realtime
-            Map<String, Object> deleteData = Map.of("roomId", roomId, "messageId", messageId);
-            socketIOServer.getRoomOperations(userId).sendEvent("message_deleted", deleteData);
 
         } catch (Exception e) {
-            log.error("Lỗi deleteMessage", e);
             throw new RuntimeException("Không thể xoá tin nhắn", e);
         }
     }
