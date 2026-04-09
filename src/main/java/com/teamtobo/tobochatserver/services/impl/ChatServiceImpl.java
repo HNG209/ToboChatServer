@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -13,7 +14,6 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
@@ -173,6 +173,7 @@ public class ChatServiceImpl implements ChatService {
                     .pk(pk)
                     .senderId(senderId)
                     .content(request.getContent())
+                    .messageStatus(MessageStatus.NORMAL) // them trang thai
                     .build();
 
             // 1. Lưu message
@@ -198,9 +199,65 @@ public class ChatServiceImpl implements ChatService {
                                             .build());
                 }
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+
+    @Override
+    public void revokeMessage(String userId, String roomId, String messageId) {
+        try {
+            String pk = "ROOM#" + roomId;
+
+            // 👇 FIX QUAN TRỌNG: thêm prefix MSG#
+            String sk = "MSG#" + messageId;
+
+            Key key = Key.builder()
+                    .partitionValue(pk)
+                    .sortValue(sk)
+                    .build();
+
+            // 1. Lấy message
+            Message message = messageTable.getItem(r -> r.key(key));
+
+            if (message == null) {
+                throw new RuntimeException("Tin nhắn không tồn tại");
+            }
+
+            // 2. Check quyền (chỉ sender được revoke)
+            if (!message.getSenderId().equals(userId)) {
+                throw new RuntimeException("Không có quyền thu hồi");
+            }
+
+            // 3. Nếu đã revoke rồi thì bỏ qua
+            if (message.getMessageStatus() == MessageStatus.REVOKED) {
+                return;
+            }
+
+            // 4. Update trạng thái
+            message.setMessageStatus(MessageStatus.REVOKED);
+            message.setContent("Tin nhắn đã bị thu hồi"); // 👈 nên thêm dòng này để FE hiển thị
+            messageTable.updateItem(message);
+
+            // 5. Gửi socket cho tất cả member
+            List<String> memberIds = roomService.getMembersByRoomId(roomId);
+
+            if (memberIds != null) {
+                for (String memberId : memberIds) {
+                    socketIOServer.getRoomOperations(memberId)
+                            .sendEvent("message_revoked",
+                                    Map.of(
+                                            "messageId", messageId, // 👈 gửi ID gốc (không có MSG#)
+                                            "roomId", roomId
+                                    ));
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            log.error("Lỗi revoke message: {}", e.getMessage());
+            throw new RuntimeException("Không thể thu hồi tin nhắn", e);
         }
     }
 }

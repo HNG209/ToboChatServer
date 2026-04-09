@@ -1,16 +1,20 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @Tag(name = "Chat Controller", description = "APIs quản lý chat")
 @RestController
@@ -44,4 +48,21 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Tin nhắn đã được lưu và đưa vào luồng gửi Socket");
     }
+
+
+    @Operation(summary = "Xóa tin nhắn trong phòng")
+    @PostMapping("/rooms/{roomId}/messages/revoke")
+    public ResponseEntity<?> revokeMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @RequestBody RevokeMessageRequest request
+    ) {
+        String userId = jwt.getSubject();
+        String messageId = request.getMessageId(); // chính là sk
+
+        chatService.revokeMessage(userId, roomId, messageId);
+
+        return ResponseEntity.ok().body("Thu hồi thành công");
+    }
+
 }
