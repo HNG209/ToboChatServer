@@ -210,9 +210,6 @@ public class ChatServiceImpl implements ChatService {
 
             String pk = "ROOM#" + cleanRoomId + "_" + userId;
 
-            log.info("=== DELETE START === Original roomId: {} | Clean roomId: {} | UserId: {} | PK: {}",
-                    roomId, cleanRoomId, userId, pk);
-
             QueryConditional queryConditional = QueryConditional.sortBeginsWith(
                     Key.builder()
                             .partitionValue(pk)
@@ -241,10 +238,8 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
 
-            if (foundMessage == null) {
-                messages.stream().limit(5).forEach(m -> log.warn("   - {}", m.getSk()));
+            if (foundMessage == null)
                 return;
-            }
 
             // Soft delete
             List<String> deletedList = new ArrayList<>(
@@ -269,6 +264,12 @@ public class ChatServiceImpl implements ChatService {
 
             messageTable.updateItem(updatedMessage);
 
+            // Gửi sự kiện cho chính mình (xoá ngay lập tức nếu đang đăng nhập trên thiết bị khác)
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("delete_message", MessageResponse.builder()
+                            .id(messageId)
+                            .roomId(roomId)
+                            .build());
 
         } catch (Exception e) {
             throw new RuntimeException("Không thể xoá tin nhắn", e);
