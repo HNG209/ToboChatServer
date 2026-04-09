@@ -37,7 +37,7 @@ public class AwsConfig {
     @Bean
     public S3Presigner s3Presigner() {
         return S3Presigner.builder()
-                .region(REGION)
+                .region(getRegion())
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
     }
