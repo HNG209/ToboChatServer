@@ -38,81 +38,74 @@ public class ChatServiceImpl implements ChatService {
         try {
             String pk = "ROOM#" + roomId;
 
+            // 1. Tạo điều kiện truy vấn: Lấy tất cả item có SK bắt đầu bằng "MSG#"
             Key searchKey = Key.builder()
                     .partitionValue(pk)
                     .sortValue("MSG#")
                     .build();
-
             QueryConditional queryConditional = QueryConditional.sortBeginsWith(searchKey);
 
+            // 2. Thiết lập Pagination (Cursor)
             Map<String, AttributeValue> startKey = null;
             if (cursor != null && !cursor.isEmpty()) {
+                // Reconstruct lại LastEvaluatedKey từ cursor (ví dụ: "MSG#2026-02-11T12:00:00")
                 startKey = new HashMap<>();
                 startKey.put("pk", AttributeValue.builder().s(pk).build());
                 startKey.put("sk", AttributeValue.builder().s(cursor).build());
             }
 
-            List<MessageResponse> results = new ArrayList<>();
-            Map<String, AttributeValue> lastEvaluatedKey = startKey;
+            // 3. Cấu hình request truy vấn DynamoDB
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false) // Lấy tin nhắn mới nhất trước (Z-A)
+                    .limit(limit)
+                    .exclusiveStartKey(startKey)
+                    .build();
 
-            // 🔥 LOOP CHO ĐỦ LIMIT
-            while (results.size() < limit) {
+            // 4. Thực thi truy vấn lấy 1 trang dữ liệu
+            Page<Message> messagePage = messageTable.query(request).stream().findFirst().orElse(null);
 
-                QueryEnhancedRequest request = QueryEnhancedRequest.builder()
-                        .queryConditional(queryConditional)
-                        .scanIndexForward(false)  // newest first
-                        .limit(Math.max(10, limit * 2))  // đọc dư một chút để bù filter (tùy tỷ lệ delete)
-                        .exclusiveStartKey(lastEvaluatedKey)
-                        .build();
-
-                Page<Message> page = messageTable.query(request)
-                        .stream()
-                        .findFirst()
-                        .orElse(null);
-
-                if (page == null || page.items().isEmpty()) break;
-
-                for (Message msg : page.items()) {
-                    if (msg.getDeletedByUserIds() != null &&
-                            msg.getDeletedByUserIds().contains(userId)) {
-                        continue;
-                    }
-                    results.add(mapToMessageResponse(msg, userId));
-                    if (results.size() == limit) break;
-                }
-
-                lastEvaluatedKey = page.lastEvaluatedKey();
-                if (lastEvaluatedKey == null) break;
-            }
-
+            List<MessageResponse> messageResponses = new ArrayList<>();
             String nextCursor = null;
-            if (lastEvaluatedKey != null && lastEvaluatedKey.containsKey("sk")) {
-                nextCursor = lastEvaluatedKey.get("sk").s();
+
+            if (messagePage != null) {
+                // 5. Map dữ liệu từ Entity sang DTO
+                messageResponses = messagePage.items().stream()
+                        // tin nhắn đã xoá ở người dùng đó thì không trả về
+                        .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
+                        .map(msg -> {
+                    String messageId = msg.getSk().replace("MSG#", "");
+
+                    // Kiểm tra xem tin nhắn có phải do user đang gọi API gửi không
+                    boolean isSelf = userId.equals(msg.getSenderId());
+
+                    UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
+
+                    // Build MessageResponse
+                    return MessageResponse.builder()
+                            .id(messageId) // Truyền ID vào đây
+                            .content(msg.getContent())
+                            .createdAt(msg.getCreatedAt())
+                            .isSelf(isSelf)
+                            .user(userResponse)
+                            .build();
+                }).collect(Collectors.toList());
+
+                // 6. Lấy cursor cho lần gọi "Load More" tiếp theo
+                Map<String, AttributeValue> lastEvaluatedKey = messagePage.lastEvaluatedKey();
+                if (lastEvaluatedKey != null && lastEvaluatedKey.containsKey("sk")) {
+                    // Trả về nguyên vẹn chuỗi SK (ví dụ: "MSG#2026-02-11T11:50:00") cho Frontend cất giữ
+                    nextCursor = lastEvaluatedKey.get("sk").s();
+                }
             }
 
-            return new PageResponse<>(results, nextCursor);
+            // 7. Trả về Response bọc danh sách và con trỏ
+            return new PageResponse<>(messageResponses, nextCursor);
 
         } catch (Exception e) {
-            log.error("Lỗi khi lấy tin nhắn: {}", e.getMessage());
-            throw new RuntimeException("Không thể tải tin nhắn", e);
+            log.error("Lỗi khi lấy danh sách tin nhắn phòng {}: {}", roomId, e.getMessage());
+            throw new RuntimeException("Không thể tải tin nhắn lúc này", e);
         }
-    }
-
-    private MessageResponse mapToMessageResponse(Message msg, String userId) {
-        String messageId = Helper.normalizeId(msg.getSk());
-
-        boolean isSelf = userId.equals(msg.getSenderId());
-
-        UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
-
-        return MessageResponse.builder()
-                .id(messageId)
-                .content(msg.getContent())
-                .createdAt(msg.getCreatedAt())
-                .isSelf(isSelf)
-                .user(userResponse)
-                .messageType(msg.getMessageType())
-                .build();
     }
 
     @Override
