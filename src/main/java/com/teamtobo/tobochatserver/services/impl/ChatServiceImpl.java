@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
@@ -254,7 +255,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public String generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
+    public PresignedUrlResponse generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
         String objectKey = "temp-drafts/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -270,6 +271,16 @@ public class ChatServiceImpl implements ChatService {
 
         PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
 
-        return presignedRequest.url().toString();
+        // Lấy chuỗi URL thô chứa chữ ký
+        String rawUploadUrl = presignedRequest.url().toString();
+
+        // Cắt bỏ phần chữ ký (từ dấu ? trở đi) để lấy URL thực tế
+        // Lưu ý: Dùng "\\?" vì trong Java Regex, dấu ? là ký tự đặc biệt
+        String cleanFileUrl = rawUploadUrl.split("\\?")[0];
+
+        return PresignedUrlResponse.builder()
+                .uploadUrl(rawUploadUrl)
+                .fileUrl(cleanFileUrl)
+                .build();
     }
 }

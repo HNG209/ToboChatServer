@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -46,12 +47,12 @@ public class ChatController {
     }
 
     @GetMapping("/upload/{roomId}")
-    public ApiResponse<String> getAttachmentPresignedUrl(
+    public ApiResponse<PresignedUrlResponse> getAttachmentPresignedUrl(
             @PathVariable String roomId,
             @RequestParam String fileName,
             @RequestParam String contentType
     ) {
-        return ApiResponse.<String>builder()
+        return ApiResponse.<PresignedUrlResponse>builder()
                 .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType))
                 .build();
     }
