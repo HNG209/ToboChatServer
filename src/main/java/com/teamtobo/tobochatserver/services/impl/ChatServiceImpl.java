@@ -119,8 +119,23 @@ public class ChatServiceImpl implements ChatService {
 
                 // 6. Cursor 2 chiều (dựa trên dữ liệu thực)
                 if (!items.isEmpty()) {
-                    prevCursor = items.get(0).getSk();
-                    nextCursor = items.get(items.size() - 1).getSk();
+                    String first = items.get(0).getSk();
+                    String last = items.get(items.size() - 1).getSk();
+
+                    if (cursor == null || cursor.isEmpty()) {
+                        // load lần đầu
+                        nextCursor = last;
+
+                    } else if ("before".equals(direction)) {
+                        // fetch tin cũ hơn
+                        prevCursor = first;
+                        nextCursor = last;
+                    } else {
+                        // fetch tin mới hơn
+                        prevCursor = last;
+                        nextCursor = first;
+                        Collections.reverse(messageResponses);
+                    }
                 }
 
                 // 7. QUAN TRỌNG: detect hết data
