@@ -19,6 +19,7 @@ import java.util.List;
 public class Message extends BaseEntity {
     String content;
     String senderId;
+    String replyTo; // id của tin nhắn phản hồi
     MessageType messageType;
     @Builder.Default
     List<String> deletedByUserIds = new ArrayList<>();
