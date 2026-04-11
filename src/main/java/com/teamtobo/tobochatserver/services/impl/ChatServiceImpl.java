@@ -6,6 +6,9 @@ import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -34,119 +37,169 @@ public class ChatServiceImpl implements ChatService {
     private final UserService userService;
 
     @Override
+    public MessageResponse getRoomMessage(String userId, String roomId, String messageId) {
+        Message message = messageTable.getItem(Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("MSG#" + messageId)
+                .build());
+
+        if(message == null) return null;
+        return MessageResponse.builder()
+                .id(messageId)
+                .roomId(roomId)
+                .content(message.getContent())
+                .createdAt(message.getCreatedAt())
+                .build();
+    }
+
+    @Override
     public PageResponse<MessageResponse> getMessages(
             String userId,
             String roomId,
             String cursor,
             int limit,
-            String direction // "before" | "after"
+            String direction // "before" | "after" | "both"
     ) {
         try {
             String pk = "ROOM#" + roomId;
+            List<Message> items = new ArrayList<>();
 
-            QueryConditional queryConditional;
+            // Biến phân trang dùng riêng cho trường hợp "both"
+            boolean hasMoreOlderBoth = false;
+            boolean hasMoreNewerBoth = false;
+            Map<String, AttributeValue> lastEvaluatedKeyOriginal = null;
 
-            // 1. Xác định điều kiện query (KHÔNG dùng between)
-            if (cursor != null && !cursor.isEmpty()) {
+            // ==========================================
+            // 1. FETCH DATA TỪ DYNAMODB
+            // ==========================================
+            if ("both".equals(direction) && cursor != null && !cursor.isEmpty()) {
+                Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
+                int halfLimit = limit / 2;
 
-                Key key = Key.builder()
-                        .partitionValue(pk)
-                        .sortValue(cursor)
+                // 1.1 Fetch AFTER (Tin mới hơn, tiến về tương lai)
+                QueryEnhancedRequest afterReq = QueryEnhancedRequest.builder()
+                        .queryConditional(QueryConditional.sortGreaterThan(key))
+                        .scanIndexForward(true)
+                        .limit(halfLimit)
                         .build();
+                Page<Message> afterPage = messageTable.query(afterReq).stream().findFirst().orElse(null);
 
-                if ("before".equals(direction)) {
-                    // lấy tin cũ hơn → KHÔNG bị duplicate
-                    queryConditional = QueryConditional.sortLessThan(key);
-                } else {
-                    // lấy tin mới hơn
-                    queryConditional = QueryConditional.sortGreaterThan(key);
+                // 1.2 Fetch BEFORE (Tin cũ hơn + lấy chính cursor hiện tại)
+                QueryEnhancedRequest beforeReq = QueryEnhancedRequest.builder()
+                        .queryConditional(QueryConditional.sortLessThanOrEqualTo(key))
+                        .scanIndexForward(false)
+                        .limit(halfLimit + 1)
+                        .build();
+                Page<Message> beforePage = messageTable.query(beforeReq).stream().findFirst().orElse(null);
+
+                // 1.3 Gộp data (Đảm bảo list trả về luôn từ Mới nhất -> Cũ nhất để đồng nhất với logic gốc)
+                if (afterPage != null) {
+                    List<Message> afterItems = new ArrayList<>(afterPage.items());
+                    Collections.reverse(afterItems); // ScanForward=true trả ra Cũ -> Mới, đảo lại thành Mới -> Cũ
+                    items.addAll(afterItems);
+
+                    Map<String, AttributeValue> lastKey = afterPage.lastEvaluatedKey();
+                    hasMoreNewerBoth = lastKey != null && !lastKey.isEmpty() && afterItems.size() == halfLimit;
+                }
+
+                if (beforePage != null) {
+                    List<Message> beforeItems = new ArrayList<>(beforePage.items()); // Đã là Mới -> Cũ sẵn
+                    items.addAll(beforeItems);
+
+                    Map<String, AttributeValue> lastKey = beforePage.lastEvaluatedKey();
+                    hasMoreOlderBoth = lastKey != null && !lastKey.isEmpty() && beforeItems.size() == (halfLimit + 1);
                 }
 
             } else {
-                // load lần đầu → lấy tin mới nhất
-                queryConditional = QueryConditional.keyEqualTo(
-                        Key.builder().partitionValue(pk).build()
-                );
+                // LOGIC CŨ CHO "before", "after" HOẶC LOAD LẦN ĐẦU (Không thay đổi)
+                QueryConditional queryConditional;
+                if (cursor != null && !cursor.isEmpty()) {
+                    Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
+                    if ("before".equals(direction)) {
+                        queryConditional = QueryConditional.sortLessThan(key);
+                    } else {
+                        queryConditional = QueryConditional.sortGreaterThan(key);
+                    }
+                } else {
+                    queryConditional = QueryConditional.keyEqualTo(Key.builder().partitionValue(pk).build());
+                }
+
+                boolean scanForward = !"before".equals(direction);
+                QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                        .queryConditional(queryConditional)
+                        .scanIndexForward(scanForward)
+                        .limit(limit)
+                        .build();
+
+                Page<Message> messagePage = messageTable.query(request).stream().findFirst().orElse(null);
+
+                if (messagePage != null) {
+                    items = new ArrayList<>(messagePage.items());
+                    lastEvaluatedKeyOriginal = messagePage.lastEvaluatedKey();
+                }
             }
 
-            // 2. scan direction
-            boolean scanForward = !"before".equals(direction);
+            // ==========================================
+            // 2. FILTER VÀ MAP SANG DTO
+            // ==========================================
+            // Filter đúng prefix MSG#
+            items = items.stream()
+                    .filter(Objects::nonNull)
+                    .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
+                    .collect(Collectors.toList());
 
-            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
-                    .queryConditional(queryConditional)
-                    .scanIndexForward(scanForward)
-                    .limit(limit)
-                    .build();
+            // Map sang DTO
+            List<MessageResponse> messageResponses = items.stream()
+                    .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
+                    .map(msg -> {
+                        String messageId = msg.getSk().replace("MSG#", "");
+                        boolean isSelf = userId.equals(msg.getSenderId());
+                        UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
 
-            Page<Message> messagePage = messageTable.query(request)
-                    .stream()
-                    .findFirst()
-                    .orElse(null);
+                        return MessageResponse.builder()
+                                .id(messageId)
+                                .content(msg.getContent())
+                                .replyTo(getRoomMessage(userId, roomId, msg.getReplyTo()))
+                                .createdAt(msg.getCreatedAt())
+                                .isSelf(isSelf)
+                                .user(userResponse)
+                                .build();
+                    }).collect(Collectors.toList());
 
-            List<MessageResponse> messageResponses = new ArrayList<>();
+            // ==========================================
+            // 3. XỬ LÝ CURSOR CHUẨN XÁC
+            // ==========================================
             String nextCursor = null;
             String prevCursor = null;
 
-            if (messagePage != null) {
+            if (!items.isEmpty()) {
+                String first = items.get(0).getSk();
+                String last = items.get(items.size() - 1).getSk();
 
-                // 3. Lấy items + đảm bảo mutable
-                List<Message> items = new ArrayList<>(messagePage.items());
-
-                // 4. Filter đúng prefix MSG#
-                items = items.stream()
-                        .filter(Objects::nonNull)
-                        .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
-                        .collect(Collectors.toList());
-
-                // 5. Map sang DTO
-                messageResponses = items.stream()
-                        .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
-                        .map(msg -> {
-                            String messageId = msg.getSk().replace("MSG#", "");
-                            boolean isSelf = userId.equals(msg.getSenderId());
-
-                            UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
-
-                            return MessageResponse.builder()
-                                    .id(messageId)
-                                    .content(msg.getContent())
-                                    .replyTo(msg.getReplyTo())
-                                    .createdAt(msg.getCreatedAt())
-                                    .isSelf(isSelf)
-                                    .user(userResponse)
-                                    .build();
-                        }).collect(Collectors.toList());
-
-                // 6. Cursor 2 chiều (dựa trên dữ liệu thực)
-                if (!items.isEmpty()) {
-                    String first = items.get(0).getSk();
-                    String last = items.get(items.size() - 1).getSk();
-
+                if ("both".equals(direction) && cursor != null && !cursor.isEmpty()) {
+                    // Cấp cursor dựa vào check hasMore của "both"
+                    prevCursor = hasMoreNewerBoth ? first : null; // load mới hơn
+                    nextCursor = hasMoreOlderBoth ? last : null;  // load cũ hơn
+                } else {
+                    // Logic cursor nguyên bản
                     if (cursor == null || cursor.isEmpty()) {
-                        // load lần đầu
                         nextCursor = last;
-
                     } else if ("before".equals(direction)) {
-                        // fetch tin cũ hơn
                         prevCursor = first;
                         nextCursor = last;
                     } else {
-                        // fetch tin mới hơn
                         prevCursor = last;
                         nextCursor = first;
                         Collections.reverse(messageResponses);
                     }
-                }
 
-                // 7. QUAN TRỌNG: detect hết data
-                Map<String, AttributeValue> lastEvaluatedKey = messagePage.lastEvaluatedKey();
-
-                if (lastEvaluatedKey == null || lastEvaluatedKey.isEmpty() || items.size() < limit) {
-                    // hết data → không cho fetch tiếp
-                    if ("before".equals(direction)) {
-                        nextCursor = null;
-                    } else {
-                        prevCursor = null;
+                    // Detect hết data nguyên bản
+                    if (lastEvaluatedKeyOriginal == null || lastEvaluatedKeyOriginal.isEmpty() || items.size() < limit) {
+                        if ("before".equals(direction)) {
+                            nextCursor = null;
+                        } else {
+                            prevCursor = null;
+                        }
                     }
                 }
             }

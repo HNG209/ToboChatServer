@@ -15,7 +15,7 @@ public class MessageResponse {
     String id;
     String roomId;
     String content;
-    String replyTo;
+    MessageResponse replyTo;
     UserResponse user;
     MessageType messageType;
     String createdAt;
