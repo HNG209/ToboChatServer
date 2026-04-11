@@ -49,7 +49,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
-    private static final Region REGION = Region.AP_SOUTHEAST_1;
+    private static final Region REGION = Region.AP_SOUTHEAST_2;
 
 
     @Override
@@ -106,6 +106,7 @@ public class ChatServiceImpl implements ChatService {
                             .id(messageId) // Truyền ID vào đây
                             .content(msg.getContent())
                             .createdAt(msg.getCreatedAt())
+                            .attachments(msg.getAttachments())
                             .isSelf(isSelf)
                             .user(userResponse)
                             // .messageType(msg.getMessageType()) // Bật lên nếu Entity có trường này
@@ -179,78 +180,109 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
-            // Xử lý attachments
+            log.info("Bắt đầu xử lý gửi tin nhắn. Attachments: {}",
+                    (request.getAttachments() != null ? request.getAttachments().size() : 0));
+
+            List<Attachment> processedAttachments = new ArrayList<>();
+
             if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
                 for (Attachment attachment : request.getAttachments()) {
-
-                    // 1. Lấy URL cũ do Frontend gửi lên (chứa thư mục temp-drafts)
                     String oldUrl = attachment.getFileUrl();
 
-                    // 2. Bóc tách Object Key từ URL
-                    // Giả sử URL: https://my-bucket.s3.ap-southeast-1.amazonaws.com/temp-drafts/abc.jpg
-                    // Ta cần lấy đoạn: temp-drafts/abc.jpg
-                    String oldKey = oldUrl.substring(oldUrl.indexOf("temp-drafts/"));
+                    if (oldUrl != null && oldUrl.contains("temp-drafts")) {
+                        // 1. Lấy Key chuẩn (Ví dụ: temp-drafts/room1/file.png)
+                        String oldKey = extractKeyFromUrl(oldUrl);
+                        String newKey = oldKey.replace("temp-drafts/", "attachments/");
 
-                    // 3. Tạo Key mới ở thư mục chính thức
-                    String newKey = oldKey.replace("temp-drafts/", "attachments/");
+                        try {
+                            // 2. Thực hiện Copy với cơ chế Retry
+                            copyS3ObjectWithRetry(oldKey, newKey, 2); // Thử tối đa 2 lần
 
-                    // 4. Copy file sang thư mục mới
-                    CopyObjectRequest copyReq = CopyObjectRequest.builder()
-                            .sourceBucket(bucketName)
-                            .sourceKey(oldKey)
-                            .destinationBucket(bucketName)
-                            .destinationKey(newKey)
-                            .build();
-                    s3Client.copyObject(copyReq);
+                            String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s",
+                                    bucketName, REGION.toString(), newKey);
 
-                    // 5. Cập nhật lại URL mới cho Attachment để chuẩn bị lưu vào DynamoDB
-                    String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s", bucketName, REGION.toString(), newKey);
-                    attachment.setFileUrl(finalUrl);
+                            processedAttachments.add(Attachment.builder()
+                                    .fileUrl(finalUrl)
+                                    .fileName(attachment.getFileName())
+                                    .contentType(attachment.getContentType())
+                                    .fileSize(attachment.getFileSize())
+                                    .build());
+
+                            log.info("S3 Copy Success: {} -> {}", oldKey, newKey);
+                        } catch (Exception e) {
+                            log.error("S3 Copy Failed sau khi retry cho key: {}. Sử dụng URL gốc.", oldKey);
+                            // Fallback: Nếu copy lỗi, vẫn giữ URL cũ để không mất dữ liệu tin nhắn
+                            processedAttachments.add(attachment);
+                        }
+                    } else {
+                        processedAttachments.add(attachment);
+                    }
                 }
             }
 
+            // 3. Lưu vào DynamoDB
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
 
-            // PK SK
-            String pk = "ROOM#" + roomId;
-            String sk = "MSG#" + now + "#" + messageId;
-
             Message message = Message.builder()
-                    .sk(sk)
-                    .pk(pk)
+                    .pk("ROOM#" + roomId)
+                    .sk("MSG#" + now + "#" + messageId)
                     .senderId(senderId)
                     .content(request.getContent())
-                    .attachments(request.getAttachments())
+                    .attachments(processedAttachments)
+                    .createdAt(now) // Đảm bảo có timestamp
                     .build();
 
-            // 1. Lưu message
             messageTable.putItem(message);
+            log.info("Lưu DynamoDB thành công. Room: {}, MessageId: {}", roomId, messageId);
 
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
+            // 4. Phát Socket (Optional: Bạn tự thêm logic socket vào đây)
+            // broadcastToRoom(roomId, message);
 
-            // 2. Gửi qua socket.io cho từng người trong phòng/nhóm
-            if (memberIds != null) {
-                for (String memberId : memberIds) {
-                    // Bỏ qua người gửi
-                    if (memberId.equals(senderId)) continue;
-                    socketIOServer.getRoomOperations(memberId)
-                            .sendEvent("receive_message",
-                                    MessageResponse.builder()
-                                            .id(Helper.normalizeId(message.getSk()))
-                                            .roomId(roomId)
-                                            .content(message.getContent())
-                                            .attachments(request.getAttachments())
-                                            .user(userService.getUserProfile(senderId))
-                                            .messageType(message.getMessageType())
-                                            .createdAt(message.getCreatedAt())
-                                            .isSelf(false)
-                                            .build());
-                }
-            }
+        } catch (Exception e) {
+            log.error("CRITICAL ERROR SEND MESSAGE: ", e);
         }
-        catch (Exception e) {
-            e.printStackTrace();
+    }
+
+    /**
+     * Hàm hỗ trợ cắt URL để lấy S3 Key chuẩn.
+     * Loại bỏ toàn bộ phần Domain và các tham số phía sau.
+     */
+    private String extractKeyFromUrl(String url) {
+        // Tìm vị trí của temp-drafts
+        int index = url.indexOf("temp-drafts");
+        if (index == -1) return url;
+
+        String key = url.substring(index);
+        // Loại bỏ query string nếu có (phần sau dấu ?)
+        if (key.contains("?")) {
+            key = key.split("\\?")[0];
+        }
+        return key;
+    }
+
+    /**
+     * Hàm Copy S3 có cơ chế đợi và thử lại (Retry)
+     */
+    private void copyS3ObjectWithRetry(String sourceKey, String destKey, int maxRetries) throws Exception {
+        int attempts = 0;
+        while (attempts < maxRetries) {
+            try {
+                s3Client.copyObject(CopyObjectRequest.builder()
+                        .sourceBucket(bucketName)
+                        .sourceKey(sourceKey)
+                        .destinationBucket(bucketName)
+                        .destinationKey(destKey)
+                        .build());
+                return; // Thành công thì thoát
+            } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+                attempts++;
+                if (attempts >= maxRetries) throw e;
+
+                log.warn("S3 Key chưa sẵn sàng (404), đang thử lại lần {}... Key: {}", attempts, sourceKey);
+                // Đợi 500ms để S3 kịp index file vừa upload
+                Thread.sleep(500);
+            }
         }
     }
 

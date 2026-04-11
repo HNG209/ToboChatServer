@@ -13,7 +13,6 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttri
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.util.List;
-
 @EqualsAndHashCode(callSuper = true)
 @Data
 @SuperBuilder
@@ -24,6 +23,7 @@ public class Message extends BaseEntity {
     String content;
     String senderId;
     MessageType messageType;
+
     List<Attachment> attachments;
 
     @DynamoDbAttribute("attachments")
@@ -34,6 +34,7 @@ public class Message extends BaseEntity {
     public void setAttachments(List<Attachment> attachments) {
         this.attachments = attachments;
     }
+
     @Override
     public EntityType getEntityType() {
         return EntityType.MESSAGE;
