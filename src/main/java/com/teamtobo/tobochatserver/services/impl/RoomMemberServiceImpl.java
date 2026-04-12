@@ -112,62 +112,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         );
     }
 
-//         return PageResponse.<RoomResponse>builder()
-//                 .items(firstPage.items().stream().map(
-//                         i -> {
-//                             // Lấy metadata của phòng để lấy thông tin roomType
-//                             Room room = roomService.getRoomById(i.getPk(), false);
-//                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
-//                                     .id(i.getPk())
-//                                     // tin nhắn mới nhất để hiển thị lên chat inbox
-//                                     .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
-//                                     .roomType(room.getRoomType())
-//                                     .createdAt(i.getCreatedAt());
-//                             if (room.getRoomType() == RoomType.DM) {
-//                                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//                                 if (memberIds.size() <= 2) {
-//                                     memberIds.stream()
-//                                             .filter(id -> !id.equals(userId))
-//                                             .findFirst().ifPresent(otherUserId -> responseBuilder.roomName(userService.getUserProfile(otherUserId).getName()));
-
-//                                 }
-//                             } else { // GROUP
-//                                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//                                 if (memberIds.size() > 2) {
-//                                     String groupName = memberIds.stream()
-//                                             .limit(3)
-//                                             .map(memberId -> userService.getUserProfile(memberId).getName())
-//                                             .collect(Collectors.joining(", "));
-//                                     responseBuilder.roomName(groupName);
-//                                 } else {
-//                                     responseBuilder.roomName(i.getRoomName());
-//                                 }
-//                             }
-
-//                             return responseBuilder.build();
-//                         }
-//                 ).toList())
-//                 .nextCursor(nextCursor)
-//                 .build();
-    @Override
-    public int getUnreadCount (String userId, String roomId) {
-        String cleanRoomId = Helper.normalizeId(roomId);
-        String cleanUserId = Helper.normalizeId(userId);
-
-        try {
-            Key key = Key.builder()
-                    .partitionValue("ROOM#" + cleanRoomId)
-                    .sortValue(("MEMBER#" + cleanUserId))
-                    .build();
-
-            RoomMember member = roomMemberTable.getItem(key);
-
-            return (member != null)? member.getUnreadMessages() : 0;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-  
     @Override
     public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status) {
         String gsiPartitionKey = "MEMBER#" + userId;
@@ -242,6 +186,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             Room room = roomService.getRoomById(i.getPk(), false);
             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                     .id(i.getPk())
+                    .unreadMessages(i.getUnreadMessages())
                     .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
                     .roomType(room.getRoomType())
                     .createdAt(i.getCreatedAt());
@@ -274,7 +219,25 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .nextCursor(nextCursor)
                 .build();
     }
-  
+    @Override
+    public int getUnreadCount (String userId, String roomId) {
+        String cleanRoomId = Helper.normalizeId(roomId);
+        String cleanUserId = Helper.normalizeId(userId);
+
+        try {
+            Key key = Key.builder()
+                    .partitionValue("ROOM#" + cleanRoomId)
+                    .sortValue(("MEMBER#" + cleanUserId))
+                    .build();
+
+            RoomMember member = roomMemberTable.getItem(key);
+
+            return (member != null)? member.getUnreadMessages() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
         String pk = "ROOM#" + roomId;

@@ -35,7 +35,7 @@ public class RoomController {
             @RequestParam(defaultValue = "10") int limit) {
         String userId = jwt.getSubject();
 
-        PageResponse<RoomResponse> rooms = chatRoomMemberService.getJoinedRooms(userId, cursor, limit);
+        PageResponse<RoomResponse> rooms = roomMemberService.getJoinedRooms(userId, cursor, limit, status);
         return ApiResponse.<PageResponse<RoomResponse>>builder()
                 .result(rooms)
                 .build();

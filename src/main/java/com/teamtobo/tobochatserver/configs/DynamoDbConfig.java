@@ -26,7 +26,7 @@ public class DynamoDbConfig {
 
     @Bean
     public DynamoDbTable<Friend> friendTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToboChatTabl", TableSchema.fromBean(Friend.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(Friend.class));
     }
 
     @Bean
