@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
+import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -22,7 +23,7 @@ public class Message extends BaseEntity {
     String content;
     String senderId;
     MessageType messageType;
-
+    MessageStatus messageStatus;
     List<Attachment> attachments;
 
     @DynamoDbAttribute("attachments")
