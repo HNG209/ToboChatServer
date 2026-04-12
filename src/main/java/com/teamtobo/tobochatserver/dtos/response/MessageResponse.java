@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -17,6 +18,7 @@ public class MessageResponse {
     String content;
     UserResponse user;
     MessageType messageType;
+    MessageStatus messageStatus;
     String createdAt;
     boolean isSelf; // nếu là message của chính mình
 }

@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
 import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
@@ -14,6 +15,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "Chat Controller", description = "APIs quản lý chat")
@@ -64,5 +66,29 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Thu hồi thành công");
     }
+    @Operation(summary = "Gửi tin nhắn cho nhiều group ( có thể gưỉ nhìu tin nhắn một lần)")
+    @PostMapping("/rooms/forwardMessage")
+    public ResponseEntity<?> forwardMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody ForwardRequest request) {
+        String userId = jwt.getSubject();
+
+        if (request.getFromRoomId() == null ||
+                request.getToRoomIds() == null ||
+                request.getMessageIds()== null) {
+            return ResponseEntity.badRequest().body("Thiếu dữ liệu");
+        }
+
+        chatService.forwardToMultipleRooms(
+                userId,
+                request.getFromRoomId(),
+                request.getToRoomIds(),
+                request.getMessageIds()
+        );
+
+        return ResponseEntity.ok("Forward thành công");
+
+    }
+
 
 }

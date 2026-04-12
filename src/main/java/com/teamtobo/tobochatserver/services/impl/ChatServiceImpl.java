@@ -90,6 +90,7 @@ public class ChatServiceImpl implements ChatService {
                             .createdAt(msg.getCreatedAt())
                             .isSelf(isSelf)
                             .user(userResponse)
+                            .messageStatus(msg.getMessageStatus())
                             // .messageType(msg.getMessageType()) // Bật lên nếu Entity có trường này
                             .build();
                 }).collect(Collectors.toList());
@@ -237,7 +238,7 @@ public class ChatServiceImpl implements ChatService {
 
             // 4. Update trạng thái
             message.setMessageStatus(MessageStatus.REVOKED);
-            message.setContent("Tin nhắn đã bị thu hồi"); // 👈 nên thêm dòng này để FE hiển thị
+            //  message.setContent("Tin nhắn đã bị thu hồi");
             messageTable.updateItem(message);
 
             // 5. Gửi socket cho tất cả member
@@ -260,4 +261,80 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Không thể thu hồi tin nhắn", e);
         }
     }
+
+    // nhieu tin nhan cho nhieu phong
+    // transaction
+    @Override
+    public void forwardToMultipleRooms(String userId, String fromRoomId, List<String> toRoomIds, List<String> messageIds) {
+        try {
+            // query tat ca tin nhan day du, lay content
+            // moi phong tao bay nhiu tin nhan voi content
+            String fromPk = "ROOM#" + fromRoomId;
+            for (String toRoomId : toRoomIds) {
+                String toPk = "ROOM#" + toRoomId;
+                List<Message> newMessages = new ArrayList<>();
+                for (String messageId : messageIds) {
+                    String sk = "MSG#" + messageId;
+                    //1. Lay message goc
+                    Message original = messageTable.getItem(r -> r.key(
+                            Key.builder()
+                                    .partitionValue(fromPk)
+                                    .sortValue(sk)
+                                    .build()));
+
+                    if (original == null) throw new RuntimeException("Không tìm thấy message: " + messageId);
+
+                    // bo qua tin nhan da revoke
+                    if (original.getMessageStatus() == MessageStatus.REVOKED) {
+                        continue;
+                    }
+
+                    //2. Tao message moi
+                    String now = Instant.now().toString();
+                    String newId = UUID.randomUUID().toString();
+                    Message newMsg = Message.builder().pk(toPk)
+                            .sk("MSG#" + now + "#" + newId)
+                            .senderId(userId)
+                            .messageStatus(MessageStatus.NORMAL)
+                            .content(original.getContent())
+                            .createdAt(now)
+                            .build();
+
+                    newMessages.add(newMsg);
+                }
+
+                // 3. Lưu DB
+                for (Message msg : newMessages) {
+                    messageTable.putItem(msg);
+                }
+
+                // 4. Gửi socket
+                List<String> members = roomService.getMembersByRoomId(toRoomId);
+
+                // TODO: xử lí trong hàng đợi
+                if (members != null) {
+                    for (Message msg : newMessages) {
+                        for (String memberId : members) {
+                            if (memberId.equals(userId)) continue;
+                            socketIOServer.getRoomOperations(memberId)
+                                    .sendEvent("receive_message",
+                                            MessageResponse.builder()
+                                                    .id(msg.getSk().replace("MSG#", ""))
+                                                    .roomId(toRoomId)
+                                                    .content(msg.getContent())
+                                                    .isSelf(false)
+                                                    .build());
+                        }
+                    }
+                }
+
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Không thể forward nhiều phòng", e);
+        }
+    }
+
+
 }

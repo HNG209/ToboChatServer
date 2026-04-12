@@ -11,6 +11,8 @@ import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
+import java.util.List;
+
 @EqualsAndHashCode(callSuper = true)
 @Data
 @SuperBuilder
@@ -22,6 +24,7 @@ public class Message extends BaseEntity {
     String senderId;
     MessageType messageType;
     MessageStatus messageStatus;
+    List<String> deletedBy;
     @Override
     public EntityType getEntityType() {
         return EntityType.MESSAGE;
