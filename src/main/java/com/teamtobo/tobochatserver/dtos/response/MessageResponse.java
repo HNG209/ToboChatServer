@@ -19,6 +19,7 @@ public class MessageResponse {
     String id;
     String roomId;
     String content;
+    MessageResponse replyTo;
     UserResponse user;
     List<Attachment> attachments;
     MessageType messageType;

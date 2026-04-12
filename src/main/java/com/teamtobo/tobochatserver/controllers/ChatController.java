@@ -33,7 +33,8 @@ public class ChatController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "before") String direction
     ) {
         String userId = jwt.getSubject();
 

@@ -15,4 +15,5 @@ import java.util.List;
 public class PageResponse<T> {
     List<T> items;
     String nextCursor;
+    String prevCursor;
 }

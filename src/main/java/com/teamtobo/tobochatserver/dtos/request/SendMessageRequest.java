@@ -13,6 +13,7 @@ import java.util.List;
 @Builder
 public class SendMessageRequest {
     String content;
+    String replyTo;
     List<Attachment> attachments;
     MessageType messageType;
 }
