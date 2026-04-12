@@ -47,6 +47,7 @@ public class ChatServiceImpl implements ChatService {
         return MessageResponse.builder()
                 .id(messageId)
                 .roomId(roomId)
+                .user(userService.getUserProfile(message.getSenderId()))
                 .content(message.getContent())
                 .createdAt(message.getCreatedAt())
                 .build();
@@ -69,9 +70,7 @@ public class ChatServiceImpl implements ChatService {
             boolean hasMoreNewerBoth = false;
             Map<String, AttributeValue> lastEvaluatedKeyOriginal = null;
 
-            // ==========================================
             // 1. FETCH DATA TỪ DYNAMODB
-            // ==========================================
             if ("both".equals(direction) && cursor != null && !cursor.isEmpty()) {
                 Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
                 int halfLimit = limit / 2;
@@ -139,9 +138,7 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
 
-            // ==========================================
             // 2. FILTER VÀ MAP SANG DTO
-            // ==========================================
             // Filter đúng prefix MSG#
             items = items.stream()
                     .filter(Objects::nonNull)
@@ -166,9 +163,7 @@ public class ChatServiceImpl implements ChatService {
                                 .build();
                     }).collect(Collectors.toList());
 
-            // ==========================================
-            // 3. XỬ LÝ CURSOR CHUẨN XÁC
-            // ==========================================
+            // 3. XỬ LÝ CURSOR
             String nextCursor = null;
             String prevCursor = null;
 
