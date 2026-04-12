@@ -8,5 +8,6 @@ public interface RoomMemberService {
     void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now);
     void updateMemberInbox(String roomId, String memberId, String now);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit);
+    PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status);
 }
 

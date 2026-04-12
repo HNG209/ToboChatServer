@@ -23,6 +23,8 @@ import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +46,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
      * @param limit
      * @return
      */
+    // Deprecated
     @Override
     public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit) {
         String gsiPartitionKey = "MEMBER#" + userId;
@@ -113,7 +116,112 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .nextCursor(nextCursor)
                 .build();
     }
+    @Override
+    public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status) {
+        String gsiPartitionKey = "MEMBER#" + userId;
+        String gsiSortKeyPrefix = "STATUS#" + status.name() + "#TIME#";
 
+        DynamoDbIndex<RoomMember> index = roomMemberTable.index("GSI_ChatInbox");
+
+        QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                Key.builder()
+                        .partitionValue(gsiPartitionKey)
+                        .sortValue(gsiSortKeyPrefix)
+                        .build()
+        );
+
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(queryConditional)
+                .scanIndexForward(false) // Mới nhất lên đầu
+                .limit(limit);
+
+        // ==========================================
+        // 1. GIẢI MÃ CURSOR TỪ FRONTEND (Decode Base64)
+        // ==========================================
+        if (cursor != null && !cursor.isEmpty()) {
+            try {
+                // Giải mã Base64 -> "ROOM#123_456||STATUS#ACTIVE#TIME#2026-04-12T14:18:19.904954Z"
+                String rawCursor = new String(Base64.getDecoder().decode(cursor), StandardCharsets.UTF_8);
+                String[] parts = rawCursor.split("\\|\\|");
+
+                if (parts.length == 2) {
+                    Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+                    // Base PK
+                    exclusiveStartKey.put("pk", AttributeValue.builder().s(parts[0]).build());
+                    // Base SK (chính là GSI PK)
+                    exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
+                    // GSI SK (định dạng thời gian của bạn)
+                    exclusiveStartKey.put("statusTime", AttributeValue.builder().s(parts[1]).build());
+
+                    builder.exclusiveStartKey(exclusiveStartKey);
+                }
+            } catch (Exception e) {
+                // Log lỗi nếu cursor không hợp lệ, DynamoDB sẽ bỏ qua và fetch trang đầu tiên
+                System.err.println("Invalid cursor format: " + cursor);
+            }
+        }
+
+        SdkIterable<Page<RoomMember>> results = index.query(builder.build());
+        Page<RoomMember> firstPage = results.iterator().hasNext() ? results.iterator().next() : null;
+
+        if (firstPage == null || firstPage.items().isEmpty()) {
+            return PageResponse.<RoomResponse>builder().items(List.of()).build();
+        }
+
+        // ==========================================
+        // 2. MÃ HÓA CURSOR CHO TRANG TIẾP THEO (Encode Base64)
+        // ==========================================
+        String nextCursor = null;
+        if (firstPage.lastEvaluatedKey() != null && !firstPage.lastEvaluatedKey().isEmpty()) {
+            String lastPk = firstPage.lastEvaluatedKey().get("pk").s();
+            String lastStatusTime = firstPage.lastEvaluatedKey().get("statusTime").s();
+
+            // Ghép lại: "ROOM#123_456||STATUS#ACTIVE#TIME#2026-04-12T14:18:19.904954Z"
+            String rawNextCursor = lastPk + "||" + lastStatusTime;
+
+            // Mã hóa thành Base64 để trả về Frontend
+            nextCursor = Base64.getEncoder().encodeToString(rawNextCursor.getBytes(StandardCharsets.UTF_8));
+        }
+
+        // ==========================================
+        // 3. MAP RESPONSE (Giữ nguyên logic của bạn)
+        // ==========================================
+        List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
+            Room room = roomService.getRoomById(i.getPk(), false);
+            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
+                    .id(i.getPk())
+                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
+                    .roomType(room.getRoomType())
+                    .createdAt(i.getCreatedAt());
+
+            if (room.getRoomType() == RoomType.DM) {
+                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
+                if (memberIds.size() <= 2) {
+                    memberIds.stream()
+                            .filter(id -> !id.equals(userId))
+                            .findFirst()
+                            .ifPresent(otherUserId -> responseBuilder.roomName(userService.getUserProfile(otherUserId).getName()));
+                }
+            } else { // GROUP
+                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
+                if (memberIds.size() > 2) {
+                    String groupName = memberIds.stream()
+                            .limit(3)
+                            .map(memberId -> userService.getUserProfile(memberId).getName())
+                            .collect(Collectors.joining(", "));
+                    responseBuilder.roomName(groupName);
+                } else {
+                    responseBuilder.roomName(i.getRoomName());
+                }
+            }
+            return responseBuilder.build();
+        }).toList();
+
+        return PageResponse.<RoomResponse>builder()
+                .items(roomResponses)
+                .nextCursor(nextCursor)
+                .build();
+    }
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
         String pk = "ROOM#" + roomId;
@@ -153,7 +261,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             roomMemberTable.putItem(newMember);
         }
     }
-
     @Override
     public void updateMemberInbox(String roomId, String memberId, String now) {
         Key key = Key.builder()

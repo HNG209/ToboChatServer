@@ -102,6 +102,7 @@ public class RoomServiceImpl implements RoomService {
                 .collect(Collectors.toList());
     }
 
+    // TODO: tách hàm này ra, 1 hàm upsertMemberInbox đã có và 1 hàm lưu metadata
     private void saveRoomToDynamoDB(String roomId, String roomName, RoomType type, List<String> memberIds, String now) {
         String pk = "ROOM#" + roomId;
 
@@ -134,6 +135,7 @@ public class RoomServiceImpl implements RoomService {
                     .roomName(roomName)
                     .lastActivityAt(now)
                     .createdAt(now)
+                    .statusTime("STATUS#ACTIVE#TIME#" + now) // thiếu bị lỗi
                     .updatedAt(now)
                     .build();
 

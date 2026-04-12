@@ -26,31 +26,17 @@ public class RoomMember extends BaseEntity {
     // GSI_ChatInbox
     String statusTime;
 
-    // GSI_RoomMember
-    String roomPk;
-    String roomSk;
-
-    // Phase 1: upgrade later
     @Override
     @DynamoDbPartitionKey
     public String getPk() { return super.getPk(); }
     @Override
     @DynamoDbSortKey
-    public String getSk() { return super.getSk(); }
-
-    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_RoomMember")
-    public String getRoomPk() { return super.getSk(); }
-    @DynamoDbSecondarySortKey(indexNames = "GSI_RoomMember")
-    public String getRoomSk() { return super.getPk(); }
-    //====================
-
     @DynamoDbSecondaryPartitionKey(indexNames = "GSI_ChatInbox")
-    public String getUserSk() { return super.getSk(); }
+    public String getSk() { return super.getSk(); }
     @DynamoDbSecondarySortKey(indexNames = "GSI_ChatInbox")
     public String getStatusTime() {
-        return "STATUS#" + status + "#TIME#" + super.getUpdatedAt();
+        return this.statusTime;
     }
-
     public String getMemberId() {
         return Helper.normalizeId(super.getSk());
     }
