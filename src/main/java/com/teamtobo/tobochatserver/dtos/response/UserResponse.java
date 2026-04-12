@@ -20,6 +20,7 @@ public class UserResponse {
     String avatarUrl;
     String createdAt;
     FriendStatus friendStatus;
+    int totalUnreadMessages;
     public String getId() {
         return Helper.normalizeId(this.id);
     }

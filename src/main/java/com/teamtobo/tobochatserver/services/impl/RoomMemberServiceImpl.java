@@ -1,11 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.entities.Room;
+import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.entities.RoomMember;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
-import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -13,13 +9,13 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.HashMap;
@@ -34,83 +30,88 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
     private final RoomService roomService;
     private final UserService userService;
-    private final ChatService chatService;
+    private final DynamoDbClient lowLevelClient;
+    private final SocketIOServer socketIOServer;
 
-    /**
-     * Lấy danh sách phòng đã tham gia của user với pagination
-     * @param userId
-     * @param cursor
-     * @param limit
-     * @return
-     */
     @Override
-    public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit) {
-        String gsiPartitionKey = "MEMBER#" + userId;
-        DynamoDbIndex<RoomMember> index = roomMemberTable.index("GSI_RoomMember");
+    public void increaseUnreadCount(String senderId, String roomId) {
+        String cleanSenderId = Helper.normalizeId(senderId);
+        String cleanRoomId = Helper.normalizeId(roomId);
 
-        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
-                .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
-                .limit(limit);
+        List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
-        if (cursor != null && !cursor.isEmpty()) {
-            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
-            exclusiveStartKey.put("roomPk", AttributeValue.builder().s(gsiPartitionKey).build());
-            exclusiveStartKey.put("roomSk", AttributeValue.builder().s(cursor).build());
-            exclusiveStartKey.put("pk", AttributeValue.builder().s("ROOM#" + cursor.replace("ROOM#", "")).build());
-            exclusiveStartKey.put("sk", AttributeValue.builder().s(gsiPartitionKey).build());
+        for (String memberId: memberIds) {
+            String cleanMemberId = Helper.normalizeId(memberId);
+            if (cleanMemberId.equals(cleanSenderId)) continue;
 
-            builder.exclusiveStartKey(exclusiveStartKey);
+            updateCounter(Map.of("pk", AttributeValue.builder().s("ROOM#" + cleanRoomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + cleanMemberId).build()),
+                    "unreadMessages", 1);
+
+            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanMemberId).build(),
+                    "sk", AttributeValue.builder().s("PROFILE").build()),
+                    "totalUnreadMessages", 1);
+
         }
 
-        SdkIterable<Page<RoomMember>> results = index.query(builder.build());
-        Page<RoomMember> firstPage = results.iterator().next();
+    }
 
-        if (firstPage == null || firstPage.items().isEmpty()) {
-            return PageResponse.<RoomResponse>builder().items(List.of()).build();
+    @Override
+    public void markAsReadedMessage(String userId, String roomId) {
+        String cleanRoomId = Helper.normalizeId(roomId);
+        String cleanUserId = Helper.normalizeId(userId);
+
+        RoomMember member = roomMemberTable.getItem(Key.builder()
+                .partitionValue("ROOM#" + cleanRoomId)
+                .sortValue(("MEMBER#" + cleanUserId))
+                .build());
+
+        if (member != null && member.getUnreadMessages() > 0) {
+            int countToReduce = member.getUnreadMessages();
+
+            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanUserId).build(),
+                    "sk", AttributeValue.builder().s("PROFILE").build()),
+                    "totalUnreadMessages", -countToReduce);
+
+            member.setUnreadMessages(0);
+            roomMemberTable.updateItem(member);
+
+            int updatedTotal = userService.getUserProfile(userId).getTotalUnreadMessages();
+            socketIOServer.getRoomOperations(userId).sendEvent("mark_read_update", Map.of(
+                    "roomId", roomId,
+                    "newTotalUnread", updatedTotal
+            ));
+
         }
+    }
 
-        String nextCursor = null;
-        if (firstPage.lastEvaluatedKey() != null) {
-            nextCursor = firstPage.lastEvaluatedKey().get("roomSk").s();
+    private void updateCounter(Map<String, AttributeValue> key, String attributeName, int value) {
+        lowLevelClient.updateItem(u -> u.tableName("ToboChatTable")
+                .key(key)
+                .updateExpression("ADD " + attributeName + " :val")
+                .expressionAttributeValues(Map.of(":val", AttributeValue.builder()
+                        .n(String.valueOf(value))
+                        .build()))
+        );
+    }
+
+    @Override
+    public int getUnreadCount (String userId, String roomId) {
+        String cleanRoomId = Helper.normalizeId(roomId);
+        String cleanUserId = Helper.normalizeId(userId);
+
+        try {
+            Key key = Key.builder()
+                    .partitionValue("ROOM#" + cleanRoomId)
+                    .sortValue(("MEMBER#" + cleanUserId))
+                    .build();
+
+            RoomMember member = roomMemberTable.getItem(key);
+
+            return (member != null)? member.getUnreadMessages() : 0;
+        } catch (Exception e) {
+            return 0;
         }
-
-        return PageResponse.<RoomResponse>builder()
-                .items(firstPage.items().stream().map(
-                        i -> {
-                            // Lấy metadata của phòng để lấy thông tin roomType
-                            Room room = roomService.getRoomById(i.getPk());
-                            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
-                                    .id(i.getPk())
-                                    // tin nhắn mới nhất để hiển thị lên chat inbox
-                                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
-                                    .roomType(room.getRoomType())
-                                    .createdAt(i.getCreatedAt());
-                            if (room.getRoomType() == RoomType.DM) {
-                                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-                                if (memberIds.size() <= 2) {
-                                    memberIds.stream()
-                                            .filter(id -> !id.equals(userId))
-                                            .findFirst().ifPresent(otherUserId -> responseBuilder.roomName(userService.getUserProfile(otherUserId).getName()));
-
-                                }
-                            } else { // GROUP
-                                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-                                if (memberIds.size() > 2) {
-                                    String groupName = memberIds.stream()
-                                            .limit(3)
-                                            .map(memberId -> userService.getUserProfile(memberId).getName())
-                                            .collect(Collectors.joining(", "));
-                                    responseBuilder.roomName(groupName);
-                                } else {
-                                    responseBuilder.roomName(i.getRoomName());
-                                }
-                            }
-
-                            return responseBuilder.build();
-                        }
-                ).toList())
-                .nextCursor(nextCursor)
-                .build();
     }
 }
 

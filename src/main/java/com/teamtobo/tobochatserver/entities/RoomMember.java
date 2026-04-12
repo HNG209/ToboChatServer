@@ -25,6 +25,9 @@ public class RoomMember extends BaseEntity {
     String roomPk;
     String roomSk;
 
+    //notification
+    int unreadMessages;
+
     // Phase 1: upgrade later
     @Override
     @DynamoDbPartitionKey
