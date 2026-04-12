@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.services.ChatRoomMemberService;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,6 +26,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatController {
     private final ChatService chatService;
+    private final ChatRoomMemberService chatRoomMemberService;
 
     @GetMapping("/rooms/{roomId}/messages")
     public ApiResponse<PageResponse<MessageResponse>> getMessages(
@@ -36,7 +38,7 @@ public class ChatController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<MessageResponse>>builder()
-                .result(chatService.getMessages(userId, roomId, cursor, limit))
+                .result(chatRoomMemberService.getMessageAndMarkAsRead(userId, roomId, cursor, limit))
                 .build();
     }
 
@@ -47,7 +49,7 @@ public class ChatController {
             @RequestBody SendMessageRequest request) {
         String senderId = jwt.getSubject();
 
-        chatService.sendMessage(senderId, roomId, request);
+        chatRoomMemberService.sendMessageAndIncreaseUnread(senderId, roomId, request);
 
         return ResponseEntity.ok().body("Tin nhắn đã được lưu và đưa vào luồng gửi Socket");
     }

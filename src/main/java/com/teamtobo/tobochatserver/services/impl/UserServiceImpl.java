@@ -91,6 +91,7 @@ public class UserServiceImpl implements UserService {
                 .dob(user.getDob())
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
+                .totalUnreadMessages(user.getTotalUnreadMessages())
                 .build();
     }
 
