@@ -4,23 +4,34 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
+import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -33,6 +44,13 @@ public class ChatServiceImpl implements ChatService {
     private final SocketIOServer socketIOServer;
     private final RoomService roomService;
     private final UserService userService;
+    private final S3Presigner s3Presigner;
+    private final S3Client s3Client;
+
+    @Value("${aws.s3.bucketName}")
+    private String bucketName;
+    private static final Region REGION = Region.AP_SOUTHEAST_2;
+
 
     @Override
     public PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit) {
@@ -71,16 +89,15 @@ public class ChatServiceImpl implements ChatService {
 
             if (messagePage != null) {
                 // 5. Map dữ liệu từ Entity sang DTO
-                messageResponses = messagePage.items().stream().map(msg -> {
-                    // Lấy ID tin nhắn:
-                    // Nếu Entity Message của bạn có trường ID riêng (như messageId), hãy dùng msg.getMessageId()
-                    // Nếu không, ta có thể cắt bỏ chữ "MSG#" để lấy đoạn thời gian làm ID tạm thời cho Frontend render
+                messageResponses = messagePage.items().stream()
+                        // tin nhắn đã xoá ở người dùng đó thì không trả về
+                        .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
+                        .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
 
                     // Kiểm tra xem tin nhắn có phải do user đang gọi API gửi không
                     boolean isSelf = userId.equals(msg.getSenderId());
 
-                    // TODO: Tối ưu truy vấn
                     UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
 
                     // Build MessageResponse
@@ -88,6 +105,7 @@ public class ChatServiceImpl implements ChatService {
                             .id(messageId) // Truyền ID vào đây
                             .content(msg.getContent())
                             .createdAt(msg.getCreatedAt())
+                            .attachments(msg.getAttachments())
                             .isSelf(isSelf)
                             .user(userResponse)
                             .messageStatus(msg.getMessageStatus())
@@ -162,43 +180,110 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
+            log.info("Bắt đầu xử lý gửi tin nhắn. Attachments: {}",
+                    (request.getAttachments() != null ? request.getAttachments().size() : 0));
+
+            List<Attachment> processedAttachments = new ArrayList<>();
+
+            if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+                for (Attachment attachment : request.getAttachments()) {
+                    String oldUrl = attachment.getFileUrl();
+
+                    if (oldUrl != null && oldUrl.contains("temp-drafts")) {
+                        // 1. Lấy Key chuẩn (Ví dụ: temp-drafts/room1/file.png)
+                        String oldKey = extractKeyFromUrl(oldUrl);
+                        String newKey = oldKey.replace("temp-drafts/", "attachments/");
+
+                        try {
+                            // 2. Thực hiện Copy với cơ chế Retry
+                            copyS3ObjectWithRetry(oldKey, newKey, 2); // Thử tối đa 2 lần
+
+                            String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s",
+                                    bucketName, REGION.toString(), newKey);
+
+                            processedAttachments.add(Attachment.builder()
+                                    .fileUrl(finalUrl)
+                                    .fileName(attachment.getFileName())
+                                    .contentType(attachment.getContentType())
+                                    .fileSize(attachment.getFileSize())
+                                    .build());
+
+                            log.info("S3 Copy Success: {} -> {}", oldKey, newKey);
+                        } catch (Exception e) {
+                            log.error("S3 Copy Failed sau khi retry cho key: {}. Sử dụng URL gốc.", oldKey);
+                            // Fallback: Nếu copy lỗi, vẫn giữ URL cũ để không mất dữ liệu tin nhắn
+                            processedAttachments.add(attachment);
+                        }
+                    } else {
+                        processedAttachments.add(attachment);
+                    }
+                }
+            }
+
+            // 3. Lưu vào DynamoDB
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
 
-            // PK SK
-            String pk = "ROOM#" + roomId;
-            String sk = "MSG#" + now + "#" + messageId;
-
             Message message = Message.builder()
-                    .sk(sk)
-                    .pk(pk)
+                    .pk("ROOM#" + roomId)
+                    .sk("MSG#" + now + "#" + messageId)
                     .senderId(senderId)
                     .content(request.getContent())
                     .messageStatus(MessageStatus.NORMAL) // them trang thai
+                    .attachments(processedAttachments)
+                    .createdAt(now) // Đảm bảo có timestamp
+                    .deletedByUserIds(new ArrayList<>())
                     .build();
 
-            // 1. Lưu message
             messageTable.putItem(message);
+            log.info("Lưu DynamoDB thành công. Room: {}, MessageId: {}", roomId, messageId);
 
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
+            // 4. Phát Socket (Optional: Bạn tự thêm logic socket vào đây)
+            // broadcastToRoom(roomId, message);
 
-            // 2. Gửi qua socket.io cho từng người trong phòng/nhóm
-            if (memberIds != null) {
-                for (String memberId : memberIds) {
-                    // Bỏ qua người gửi
-                    if (memberId.equals(senderId)) continue;
-                    socketIOServer.getRoomOperations(memberId)
-                            .sendEvent("receive_message",
-                                    MessageResponse.builder()
-                                            .id(Helper.normalizeId(message.getSk()))
-                                            .roomId(roomId)
-                                            .content(message.getContent())
-                                            .user(userService.getUserProfile(senderId))
-                                            .messageType(message.getMessageType())
-                                            .createdAt(message.getCreatedAt())
-                                            .isSelf(false)
-                                            .build());
-                }
+        } catch (Exception e) {
+            log.error("CRITICAL ERROR SEND MESSAGE: ", e);
+        }
+    }
+
+    /**
+     * Hàm hỗ trợ cắt URL để lấy S3 Key chuẩn.
+     * Loại bỏ toàn bộ phần Domain và các tham số phía sau.
+     */
+    private String extractKeyFromUrl(String url) {
+        // Tìm vị trí của temp-drafts
+        int index = url.indexOf("temp-drafts");
+        if (index == -1) return url;
+
+        String key = url.substring(index);
+        // Loại bỏ query string nếu có (phần sau dấu ?)
+        if (key.contains("?")) {
+            key = key.split("\\?")[0];
+        }
+        return key;
+    }
+
+    /**
+     * Hàm Copy S3 có cơ chế đợi và thử lại (Retry)
+     */
+    private void copyS3ObjectWithRetry(String sourceKey, String destKey, int maxRetries) throws Exception {
+        int attempts = 0;
+        while (attempts < maxRetries) {
+            try {
+                s3Client.copyObject(CopyObjectRequest.builder()
+                        .sourceBucket(bucketName)
+                        .sourceKey(sourceKey)
+                        .destinationBucket(bucketName)
+                        .destinationKey(destKey)
+                        .build());
+                return; // Thành công thì thoát
+            } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+                attempts++;
+                if (attempts >= maxRetries) throw e;
+
+                log.warn("S3 Key chưa sẵn sàng (404), đang thử lại lần {}... Key: {}", attempts, sourceKey);
+                // Đợi 500ms để S3 kịp index file vừa upload
+                Thread.sleep(500);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -335,6 +420,109 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Không thể forward nhiều phòng", e);
         }
     }
+  
+    @Override
+    public PresignedUrlResponse generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
+        String objectKey = "temp-drafts/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(objectKey)
+                .contentType(contentType)
+                .build();
+
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(10)) // URL có hạn trong 10 phút
+                .putObjectRequest(putObjectRequest)
+                .build();
+
+        PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
+
+        // Lấy chuỗi URL thô chứa chữ ký
+        String rawUploadUrl = presignedRequest.url().toString();
+
+        // Cắt bỏ phần chữ ký (từ dấu ? trở đi) để lấy URL thực tế
+        // Lưu ý: Dùng "\\?" vì trong Java Regex, dấu ? là ký tự đặc biệt
+        String cleanFileUrl = rawUploadUrl.split("\\?")[0];
+
+        return PresignedUrlResponse.builder()
+                .uploadUrl(rawUploadUrl)
+                .fileUrl(cleanFileUrl)
+                .build();
+    }
+  
+    @Override
+    public void deleteMessage(String messageId, String roomId, String userId) {
+        try {
+            String cleanRoomId = roomId.contains("_")
+                    ? roomId.substring(0, roomId.indexOf("_"))
+                    : roomId;
+
+            String pk = "ROOM#" + cleanRoomId + "_" + userId;
+
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                    Key.builder()
+                            .partitionValue(pk)
+                            .sortValue("MSG#")
+                            .build()
+            );
+
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false)
+                    .limit(30)
+                    .build();
+
+            List<Message> messages = messageTable.query(request)
+                    .stream()
+                    .flatMap(page -> page.items().stream())
+                    .toList();
 
 
+            Message foundMessage = null;
+            for (Message msg : messages) {
+                String sk = msg.getSk();
+                if (sk != null && sk.contains(messageId)) {
+                    foundMessage = msg;
+                    break;
+                }
+            }
+
+            if (foundMessage == null)
+                return;
+
+            // Soft delete
+            List<String> deletedList = new ArrayList<>(
+                    foundMessage.getDeletedByUserIds() != null
+                            ? foundMessage.getDeletedByUserIds()
+                            : new ArrayList<>()
+            );
+
+            if (!deletedList.contains(userId)) {
+                deletedList.add(userId);
+            }
+
+            Message updatedMessage = Message.builder()
+                    .pk(foundMessage.getPk())
+                    .sk(foundMessage.getSk())
+                    .content(foundMessage.getContent())
+                    .senderId(foundMessage.getSenderId())
+                    .messageType(foundMessage.getMessageType())
+                    .createdAt(foundMessage.getCreatedAt())
+                    .deletedByUserIds(deletedList)
+                    .build();
+
+            messageTable.updateItem(updatedMessage);
+
+            // Gửi sự kiện cho chính mình (xoá ngay lập tức nếu đang đăng nhập trên thiết bị khác)
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("delete_message", MessageResponse.builder()
+                            .id(messageId)
+                            .roomId(roomId)
+                            .build());
+
+        } catch (Exception e) {
+            throw new RuntimeException("Không thể xoá tin nhắn", e);
+        }
+    }
 }

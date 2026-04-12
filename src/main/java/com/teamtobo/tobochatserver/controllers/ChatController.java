@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -66,6 +67,7 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Thu hồi thành công");
     }
+  
     @Operation(summary = "Gửi tin nhắn cho nhiều group ( có thể gưỉ nhìu tin nhắn một lần)")
     @PostMapping("/rooms/forwardMessage")
     public ResponseEntity<?> forwardMessage(
@@ -90,5 +92,28 @@ public class ChatController {
 
     }
 
+    @GetMapping("/upload/{roomId}")
+    public ApiResponse<PresignedUrlResponse> getAttachmentPresignedUrl(
+            @PathVariable String roomId,
+            @RequestParam String fileName,
+            @RequestParam String contentType
+    ) {
+        return ApiResponse.<PresignedUrlResponse>builder()
+                .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType))
+      }
+  
+    @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
+    public ApiResponse<?> deleteMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @PathVariable String messageId
+    ) {
+        String userId = jwt.getSubject();
 
+        chatService.deleteMessage(messageId, roomId, userId);
+
+        return ApiResponse.builder()
+                .message("Đã xoá tin nhắn phía bạn")
+                .build();
+    }
 }

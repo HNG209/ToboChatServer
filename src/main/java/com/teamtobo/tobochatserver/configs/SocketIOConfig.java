@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.JwtException;
 @Slf4j
 @RequiredArgsConstructor
 public class SocketIOConfig {
+
     private final JwtDecoder jwtDecoder;
 
     @Bean
@@ -22,18 +23,14 @@ public class SocketIOConfig {
 
         config.setHostname("localhost");
         config.setPort(8085);
-
-        // Cho phép mọi Frontend kết nối tới (Bỏ qua lỗi CORS)
         config.setOrigin("*");
 
         config.setAuthorizationListener(handshakeData -> {
-            // Lấy token trực tiếp từ URL (ws://localhost:8085?token=eyJhbGci...)
             String token = handshakeData.getSingleUrlParam("token");
 
             if (token != null && !token.isEmpty()) {
                 try {
                     Jwt jwt = jwtDecoder.decode(token);
-
                     log.info("Xác thực thành công cho user: {}", jwt.getSubject());
                     return AuthorizationResult.SUCCESSFUL_AUTHORIZATION;
 
@@ -46,6 +43,19 @@ public class SocketIOConfig {
             return AuthorizationResult.FAILED_AUTHORIZATION;
         });
 
-        return new SocketIOServer(config);
+        SocketIOServer server = new SocketIOServer(config);
+
+        server.addEventListener("join_user_room", String.class, (client, userId, ackSender) -> {
+            if (userId != null && !userId.trim().isEmpty()) {
+                client.joinRoom(userId);
+                log.info("User {} joined their personal socket room", userId);
+            } else {
+                log.warn("join_user_room received with empty userId");
+            }
+        });
+
+        log.info("SocketIO Server started with join_user_room listener");
+
+        return server;
     }
 }
