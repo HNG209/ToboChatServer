@@ -26,6 +26,9 @@ public class RoomMember extends BaseEntity {
     // GSI_ChatInbox
     String statusTime;
 
+    //notification
+    int unreadMessages;
+
     @Override
     @DynamoDbPartitionKey
     public String getPk() { return super.getPk(); }

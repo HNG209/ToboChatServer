@@ -9,5 +9,8 @@ public interface RoomMemberService {
     void updateMemberInbox(String roomId, String memberId, String now);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status);
+    void increaseUnreadCount (String senderId, String roomId);
+    void markAsReadedMessage (String userId, String roomId);
+    int getUnreadCount (String userId, String roomId);
 }
 
