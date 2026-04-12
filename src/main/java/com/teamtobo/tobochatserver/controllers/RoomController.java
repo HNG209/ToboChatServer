@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.services.ChatRoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
@@ -30,6 +31,7 @@ public class RoomController {
     public ApiResponse<PageResponse<RoomResponse>> getJoinedRooms(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "ACTIVE") InboxStatus status,
             @RequestParam(defaultValue = "10") int limit) {
         String userId = jwt.getSubject();
 

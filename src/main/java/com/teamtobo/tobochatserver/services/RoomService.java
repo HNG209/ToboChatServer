@@ -11,5 +11,5 @@ import java.util.List;
 public interface RoomService {
     void createRoom(RoomCreateRequest request, RoomType roomType);
     List<String> getMembersByRoomId(String roomId);
-    Room getRoomById(String roomId);
+    Room getRoomById(String roomId, boolean skipException);
 }

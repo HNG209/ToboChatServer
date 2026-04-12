@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
+import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -20,28 +21,25 @@ public class RoomMember extends BaseEntity {
     String role;
     String roomName;
     String lastActivityAt;
+    InboxStatus status;
 
-    // GSI_RoomMember
-    String roomPk;
-    String roomSk;
+    // GSI_ChatInbox
+    String statusTime;
 
     //notification
     int unreadMessages;
 
-    // Phase 1: upgrade later
     @Override
     @DynamoDbPartitionKey
     public String getPk() { return super.getPk(); }
     @Override
     @DynamoDbSortKey
+    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_ChatInbox")
     public String getSk() { return super.getSk(); }
-
-    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_RoomMember")
-    public String getRoomPk() { return super.getSk(); }
-    @DynamoDbSecondarySortKey(indexNames = "GSI_RoomMember")
-    public String getRoomSk() { return super.getPk(); }
-    //====================
-
+    @DynamoDbSecondarySortKey(indexNames = "GSI_ChatInbox")
+    public String getStatusTime() {
+        return this.statusTime;
+    }
     public String getMemberId() {
         return Helper.normalizeId(super.getSk());
     }

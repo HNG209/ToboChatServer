@@ -372,6 +372,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public FriendStatus getFriendStatus(String userId, String otherId) {
+        getUserById(userId);
+        getUserById(otherId);
+
         // 1. Check có phải là chính mình ko
         if(userId.equals(otherId)) return FriendStatus.SELF;
 
