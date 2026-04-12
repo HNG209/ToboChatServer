@@ -10,4 +10,5 @@ public interface ChatService {
     MessageResponse getLatestMessage(String userId, String roomId);
     void sendMessage(String senderId, String roomId, SendMessageRequest request);
     PresignedUrlResponse generateAttachmentPresignedUrl(String fileName, String roomId, String contentType);
+    void deleteMessage(String messageId, String roomId, String userId);
 }

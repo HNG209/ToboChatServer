@@ -54,6 +54,20 @@ public class ChatController {
     ) {
         return ApiResponse.<PresignedUrlResponse>builder()
                 .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType))
+      }
+  
+    @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
+    public ApiResponse<?> deleteMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @PathVariable String messageId
+    ) {
+        String userId = jwt.getSubject();
+
+        chatService.deleteMessage(messageId, roomId, userId);
+
+        return ApiResponse.builder()
+                .message("Đã xoá tin nhắn phía bạn")
                 .build();
     }
 }
