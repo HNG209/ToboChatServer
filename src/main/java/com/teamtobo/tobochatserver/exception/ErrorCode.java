@@ -72,6 +72,7 @@ public enum ErrorCode {
     ROOM_CREATE_ERROR(422222, "[422222] Room create error", HttpStatus.INTERNAL_SERVER_ERROR),
 
     INVALID_AVATAR_URL(6001, "[6001] Invalid avatar url", HttpStatus.BAD_REQUEST),
+    ROOM_NOT_FOUND(40031, "[40031] Room not found", HttpStatus.NOT_FOUND)
     ;
 
 

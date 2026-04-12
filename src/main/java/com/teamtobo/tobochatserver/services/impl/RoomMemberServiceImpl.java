@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
@@ -78,7 +79,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .items(firstPage.items().stream().map(
                         i -> {
                             // Lấy metadata của phòng để lấy thông tin roomType
-                            Room room = roomService.getRoomById(i.getPk());
+                            Room room = roomService.getRoomById(i.getPk(), false);
                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                                     .id(i.getPk())
                                     // tin nhắn mới nhất để hiển thị lên chat inbox
@@ -111,6 +112,68 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();
+    }
+
+    @Override
+    public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
+        String pk = "ROOM#" + roomId;
+        String sk = "MEMBER#" + memberId;
+
+        Key key = Key.builder()
+                .partitionValue(pk)
+                .sortValue(sk)
+                .build();
+
+        // 1. Kiểm tra xem record đã tồn tại chưa
+        RoomMember member = roomMemberTable.getItem(key);
+
+        if (member != null) {
+            // Cập nhật
+            member.setUpdatedAt(now);
+
+            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
+            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
+            if (member.getStatus() != null) {
+                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
+            }
+
+            roomMemberTable.updateItem(member);
+
+        } else {
+            // Tạo mới
+            RoomMember newMember = RoomMember.builder()
+                    .pk(pk)
+                    .sk(sk)
+                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
+                    .build();
+
+            roomMemberTable.putItem(newMember);
+        }
+    }
+
+    @Override
+    public void updateMemberInbox(String roomId, String memberId, String now) {
+        Key key = Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("MEMBER#" + memberId)
+                .build();
+
+        RoomMember member = roomMemberTable.getItem(key);
+
+        if (member != null) {
+            member.setUpdatedAt(now);
+//            member.setLastMessagePreview(lastMessagePreview);
+
+            // tính toán lại để GSI tự động sắp xếp
+            if (member.getStatus() != null) {
+                member.setStatusTime("STATUS#" + member.getStatus() + "#TIME#" + now);
+            }
+
+            roomMemberTable.updateItem(member);
+        }
     }
 }
 

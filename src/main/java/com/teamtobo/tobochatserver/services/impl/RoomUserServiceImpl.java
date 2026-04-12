@@ -3,6 +3,8 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.RoomUserService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -17,8 +19,34 @@ public class RoomUserServiceImpl implements RoomUserService {
     private final RoomService roomService;
     private final UserService userService;
     @Override
-    public RoomResponse getRoomMetadata(String userId, String roomId) {
-        Room room = roomService.getRoomById(roomId);
+    public RoomResponse getRoomMetadata(String userId, String roomId) { // lấy tên phòng
+        Room room = roomService.getRoomById(roomId, true);
+
+        if (room == null) { // Fallback
+            String[] parts = roomId.split("_");
+
+            if (parts.length != 2) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+
+            // Lấy ID của người kia bằng cách loại trừ ID của chính mình
+            String otherUserId = parts[0].equals(userId) ? parts[1] :
+                    (parts[1].equals(userId) ? parts[0] : null);
+
+            // Nếu user hiện tại không nằm trong chuỗi ID phòng -> Không cho phép
+            if (otherUserId == null) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+
+            // Gọi UserService lấy tên người lạ
+            String strangerName = userService.getUserProfile(otherUserId).getName();
+
+            return RoomResponse.builder()
+                    .id(roomId)
+                    .roomName(strangerName)
+                    .roomType(RoomType.DM)
+                    .build();
+        }
 
         if (room.getRoomType() == RoomType.DM) {
             List<String> memberIds = roomService.getMembersByRoomId(roomId);

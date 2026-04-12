@@ -4,7 +4,9 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.services.ChatService;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +20,9 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class ChatController {
     private final ChatService chatService;
+    private final ChatDomainService chatDomainService;
 
+    @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
     @GetMapping("/rooms/{roomId}/messages")
     public ApiResponse<PageResponse<MessageResponse>> getMessages(
             @AuthenticationPrincipal Jwt jwt,
@@ -34,20 +38,22 @@ public class ChatController {
                 .build();
     }
 
+    @Operation(summary = "Gửi message")
     @PostMapping("/rooms/{roomId}/messages")
-    public ResponseEntity<?> sendMessage(
+    public ResponseEntity<Void> sendMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @RequestBody SendMessageRequest request) {
         String senderId = jwt.getSubject();
 
-        chatService.sendMessage(senderId, roomId, request);
+        chatDomainService.sendMessage(senderId, roomId, request);
 
-        return ResponseEntity.ok().body("Tin nhắn đã được lưu và đưa vào luồng gửi Socket");
+        return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Xoá tin nhắn ở phía tôi")
     @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
-    public ApiResponse<?> deleteMessage(
+    public ResponseEntity<Void> deleteMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @PathVariable String messageId
@@ -56,8 +62,6 @@ public class ChatController {
 
         chatService.deleteMessage(messageId, roomId, userId);
 
-        return ApiResponse.builder()
-                .message("Đã xoá tin nhắn phía bạn")
-                .build();
+        return ResponseEntity.noContent().build();
     }
 }

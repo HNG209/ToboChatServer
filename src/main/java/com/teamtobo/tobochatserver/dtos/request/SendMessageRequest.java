@@ -12,5 +12,4 @@ import lombok.experimental.FieldDefaults;
 public class SendMessageRequest {
     String content;
     String replyTo;
-    MessageType messageType;
 }

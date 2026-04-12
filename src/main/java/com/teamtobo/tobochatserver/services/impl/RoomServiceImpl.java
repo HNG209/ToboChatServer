@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -23,6 +24,8 @@ import software.amazon.awssdk.enhanced.dynamodb.model.*;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.teamtobo.tobochatserver.utils.Helper.createDeterministicId;
 
 @Service
 @Slf4j
@@ -78,8 +81,6 @@ public class RoomServiceImpl implements RoomService {
         }
     }
 
-
-
     @Override
     public List<String> getMembersByRoomId(String roomId) {
         // 1. Tạo điều kiện truy vấn
@@ -127,6 +128,7 @@ public class RoomServiceImpl implements RoomService {
                     .pk(pk)
                     .sk("MEMBER#" + userId)
                     .role(role)
+                    .status(InboxStatus.ACTIVE)
                     .roomName(roomName)
                     .lastActivityAt(now)
                     .createdAt(now)
@@ -146,12 +148,16 @@ public class RoomServiceImpl implements RoomService {
     }
 
     @Override
-    public Room getRoomById(String roomId) {
+    public Room getRoomById(String roomId, boolean skipException) {
         Key key = Key.builder()
                 .partitionValue("ROOM#" + Helper.normalizeId(roomId))
                 .sortValue("METADATA")
                 .build();
 
-        return roomTable.getItem(key);
+        Room room = roomTable.getItem(key);
+        if(room == null && !skipException)
+            throw new AppException(ErrorCode.ROOM_NOT_FOUND);
+
+        return room;
     }
 }
