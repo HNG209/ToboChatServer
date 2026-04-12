@@ -54,7 +54,9 @@ public class RoomServiceImpl implements RoomService {
                 Collections.sort(uniqueMembers);
                 String roomId = uniqueMembers.get(0) + "_" + uniqueMembers.get(1);
 
-                // TODO: Kiểm tra xem phòng DM này đã tồn tại chưa (query bằng PK = ROOM#roomId và SK = METADATA)
+                // Kiểm tra xem phòng DM này đã tồn tại chưa
+                Room existedRoom = getRoomById(roomId, true);
+                if (existedRoom != null) return;
 
                 // DM room không cần tên cụ thể
                 String roomName = "Direct Message";
