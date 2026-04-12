@@ -55,7 +55,6 @@ public class ChatServiceImpl implements ChatService {
     private String bucketName;
     private static final Region REGION = Region.AP_SOUTHEAST_2;
 
-
     @Override
     public MessageResponse getRoomMessage(String userId, String roomId, String messageId) {
         Message message = messageTable.getItem(Key.builder()
@@ -63,7 +62,7 @@ public class ChatServiceImpl implements ChatService {
                 .sortValue("MSG#" + messageId)
                 .build());
 
-        if(message == null) return null;
+        if (message == null) return null;
         return MessageResponse.builder()
                 .id(messageId)
                 .roomId(roomId)
@@ -81,7 +80,6 @@ public class ChatServiceImpl implements ChatService {
             int limit,
             String direction // "before" | "after" | "both"
     ) {
-//        roomService.getRoomById(roomId);
         String pk = "ROOM#" + roomId;
         List<Message> items = new ArrayList<>();
 
@@ -111,26 +109,22 @@ public class ChatServiceImpl implements ChatService {
                     .build();
             Page<Message> beforePage = messageTable.query(beforeReq).stream().findFirst().orElse(null);
 
-            // 1.3 Gộp data (Đảm bảo list trả về luôn từ Mới nhất -> Cũ nhất để đồng nhất với logic gốc)
+            // 1.3 Gộp data
             if (afterPage != null) {
                 List<Message> afterItems = new ArrayList<>(afterPage.items());
-                Collections.reverse(afterItems); // ScanForward=true trả ra Cũ -> Mới, đảo lại thành Mới -> Cũ
+                Collections.reverse(afterItems);
                 items.addAll(afterItems);
-
-                Map<String, AttributeValue> lastKey = afterPage.lastEvaluatedKey();
-                hasMoreNewerBoth = lastKey != null && !lastKey.isEmpty() && afterItems.size() == halfLimit;
+                hasMoreNewerBoth = afterPage.lastEvaluatedKey() != null && !afterPage.lastEvaluatedKey().isEmpty() && afterItems.size() == halfLimit;
             }
 
             if (beforePage != null) {
-                List<Message> beforeItems = new ArrayList<>(beforePage.items()); // Đã là Mới -> Cũ sẵn
+                List<Message> beforeItems = new ArrayList<>(beforePage.items());
                 items.addAll(beforeItems);
-
-                Map<String, AttributeValue> lastKey = beforePage.lastEvaluatedKey();
-                hasMoreOlderBoth = lastKey != null && !lastKey.isEmpty() && beforeItems.size() == (halfLimit + 1);
+                hasMoreOlderBoth = beforePage.lastEvaluatedKey() != null && !beforePage.lastEvaluatedKey().isEmpty() && beforeItems.size() == (halfLimit + 1);
             }
 
         } else {
-            // LOGIC CŨ CHO "before", "after" HOẶC LOAD LẦN ĐẦU (Không thay đổi)
+            // LOGIC CŨ CHO "before", "after" HOẶC LOAD LẦN ĐẦU
             QueryConditional queryConditional;
             if (cursor != null && !cursor.isEmpty()) {
                 Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
@@ -153,52 +147,22 @@ public class ChatServiceImpl implements ChatService {
             Page<Message> messagePage = messageTable.query(request).stream().findFirst().orElse(null);
 
             if (messagePage != null) {
+                // Chỉ lấy raw items, phần map để lại phía dưới làm chung
                 items = new ArrayList<>(messagePage.items());
                 lastEvaluatedKeyOriginal = messagePage.lastEvaluatedKey();
-                // 5. Map dữ liệu từ Entity sang DTO
-                messageResponses = messagePage.items().stream()
-                        // tin nhắn đã xoá ở người dùng đó thì không trả về
-                        .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
-                        .map(msg -> {
-                    String messageId = msg.getSk().replace("MSG#", "");
-
-                    // Kiểm tra xem tin nhắn có phải do user đang gọi API gửi không
-                    boolean isSelf = userId.equals(msg.getSenderId());
-
-                    UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
-
-                    // Build MessageResponse
-                    return MessageResponse.builder()
-                            .id(messageId) // Truyền ID vào đây
-                            .content(msg.getContent())
-                            .createdAt(msg.getCreatedAt())
-                            .attachments(msg.getAttachments())
-                            .isSelf(isSelf)
-                            .user(userResponse)
-                            .messageStatus(msg.getMessageStatus())
-                            // .messageType(msg.getMessageType()) // Bật lên nếu Entity có trường này
-                            .build();
-                }).collect(Collectors.toList());
-
-                // 6. Lấy cursor cho lần gọi "Load More" tiếp theo
-                Map<String, AttributeValue> lastEvaluatedKey = messagePage.lastEvaluatedKey();
-                if (lastEvaluatedKey != null && lastEvaluatedKey.containsKey("sk")) {
-                    // Trả về nguyên vẹn chuỗi SK (ví dụ: "MSG#2026-02-11T11:50:00") cho Frontend cất giữ
-                    nextCursor = lastEvaluatedKey.get("sk").s();
-                }
             }
         }
 
         // 2. FILTER VÀ MAP SANG DTO
-        // Filter đúng prefix MSG#
+        // Lọc bỏ null và các record không phải là message
         items = items.stream()
                 .filter(Objects::nonNull)
                 .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
                 .collect(Collectors.toList());
 
-        // Map sang DTO
+        // Thực hiện ánh xạ sang DTO duy nhất 1 lần tại đây
         List<MessageResponse> messageResponses = items.stream()
-                .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
+                .filter(msg -> msg.getDeletedByUserIds() == null || !msg.getDeletedByUserIds().contains(userId)) // Thêm null check cho an toàn
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isSelf = userId.equals(msg.getSenderId());
@@ -207,10 +171,14 @@ public class ChatServiceImpl implements ChatService {
                     return MessageResponse.builder()
                             .id(messageId)
                             .content(msg.getContent())
-                            .replyTo(getRoomMessage(userId, roomId, msg.getReplyTo()))
+                            // Thêm null check cho replyTo để tránh lỗi khi fetch
+                            .replyTo(msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
                             .createdAt(msg.getCreatedAt())
                             .isSelf(isSelf)
                             .user(userResponse)
+                            .attachments(msg.getAttachments())
+                            .messageStatus(msg.getMessageStatus())
+                            // .messageType(msg.getMessageType())
                             .build();
                 }).collect(Collectors.toList());
 
@@ -223,11 +191,9 @@ public class ChatServiceImpl implements ChatService {
             String last = items.get(items.size() - 1).getSk();
 
             if ("both".equals(direction) && cursor != null && !cursor.isEmpty()) {
-                // Cấp cursor dựa vào check hasMore của "both"
-                prevCursor = hasMoreNewerBoth ? first : null; // load mới hơn
-                nextCursor = hasMoreOlderBoth ? last : null;  // load cũ hơn
+                prevCursor = hasMoreNewerBoth ? first : null;
+                nextCursor = hasMoreOlderBoth ? last : null;
             } else {
-                // Logic cursor nguyên bản
                 if (cursor == null || cursor.isEmpty()) {
                     nextCursor = last;
                 } else if ("before".equals(direction)) {
@@ -239,9 +205,9 @@ public class ChatServiceImpl implements ChatService {
                     Collections.reverse(messageResponses);
                 }
 
-                // Detect hết data nguyên bản
+                // Phát hiện hết dữ liệu
                 if (lastEvaluatedKeyOriginal == null || lastEvaluatedKeyOriginal.isEmpty() || items.size() < limit) {
-                    if ("before".equals(direction)) {
+                    if ("before".equals(direction) || cursor == null || cursor.isEmpty()) {
                         nextCursor = null;
                     } else {
                         prevCursor = null;
@@ -252,6 +218,7 @@ public class ChatServiceImpl implements ChatService {
 
         return new PageResponse<>(messageResponses, nextCursor, prevCursor);
     }
+
     @Override
     public MessageResponse getLatestMessage(String userId, String roomId) {
         try {
@@ -408,11 +375,8 @@ public class ChatServiceImpl implements ChatService {
                 // Đợi 500ms để S3 kịp index file vừa upload
                 Thread.sleep(500);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
-
 
     @Override
     public void revokeMessage(String userId, String roomId, String messageId) {
@@ -543,7 +507,7 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Không thể forward nhiều phòng", e);
         }
     }
-  
+
     @Override
     public PresignedUrlResponse generateAttachmentPresignedUrl(String fileName, String roomId, String contentType) {
         String objectKey = "temp-drafts/" + roomId + "/" + UUID.randomUUID() + "-" + fileName;
@@ -573,7 +537,7 @@ public class ChatServiceImpl implements ChatService {
                 .fileUrl(cleanFileUrl)
                 .build();
     }
-  
+
     @Override
     public void deleteMessage(String messageId, String roomId, String userId) {
         try {

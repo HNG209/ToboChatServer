@@ -35,13 +35,12 @@ public class ChatRoomMemberServiceImpl implements ChatRoomMemberService {
     private final ChatService chatService;
     private final SocketIOServer socketIOServer;
 
-
     @Override
-    public PageResponse<MessageResponse> getMessageAndMarkAsRead(String userId, String roomId, String cursor, int limit) {
+    public PageResponse<MessageResponse> getMessageAndMarkAsRead(String userId, String roomId, String cursor, int limit, String direction) {
         if (cursor == null || cursor.isEmpty()) {
             roomMemberService.markAsReadedMessage(userId, roomId);
         }
-        return chatService.getMessages(userId, roomId, cursor, limit);
+        return chatService.getMessages(userId, roomId, cursor, limit, direction);
     }
 
     @Override
@@ -103,7 +102,7 @@ public class ChatRoomMemberServiceImpl implements ChatRoomMemberService {
                 .items(firstPage.items().stream().map(
                         i -> {
                             // Lấy metadata của phòng để lấy thông tin roomType
-                            Room room = roomService.getRoomById(i.getPk());
+                            Room room = roomService.getRoomById(i.getPk(), false);
                             RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
                                     .id(i.getPk())
                                     // tin nhắn mới nhất để hiển thị lên chat inbox

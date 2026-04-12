@@ -21,32 +21,32 @@ public class DynamoDbConfig {
 
     @Bean
     public DynamoDbTable<User> userTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(User.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(User.class));
     }
 
     @Bean
     public DynamoDbTable<Friend> friendTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(Friend.class));
+        return enhancedClient.table("ToboChatTabl", TableSchema.fromBean(Friend.class));
     }
 
     @Bean
     public DynamoDbTable<FriendRequest> friendRequestTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(FriendRequest.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(FriendRequest.class));
     }
 
     @Bean
     public DynamoDbTable<Room> RoomTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(Room.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(Room.class));
     }
 
     @Bean
     public DynamoDbTable<RoomMember> RoomMemberTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(RoomMember.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(RoomMember.class));
     }
 
     @Bean
     public DynamoDbTable<Message> MessageTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table("ToBoChat", TableSchema.fromBean(Message.class));
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(Message.class));
     }
 
     @Bean

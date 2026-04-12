@@ -42,7 +42,7 @@ public class ChatController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<MessageResponse>>builder()
-                .result(chatRoomMemberService.getMessageAndMarkAsRead(userId, roomId, cursor, limit))
+                .result(chatRoomMemberService.getMessageAndMarkAsRead(userId, roomId, cursor, limit, direction))
                 .build();
     }
 
@@ -73,7 +73,7 @@ public class ChatController {
 
         return ResponseEntity.ok().body("Thu hồi thành công");
     }
-  
+
     @Operation(summary = "Gửi tin nhắn cho nhiều group ( có thể gưỉ nhìu tin nhắn một lần)")
     @PostMapping("/rooms/forwardMessage")
     public ResponseEntity<?> forwardMessage(
@@ -83,7 +83,7 @@ public class ChatController {
 
         if (request.getFromRoomId() == null ||
                 request.getToRoomIds() == null ||
-                request.getMessageIds()== null) {
+                request.getMessageIds() == null) {
             return ResponseEntity.badRequest().body("Thiếu dữ liệu");
         }
 
@@ -105,9 +105,10 @@ public class ChatController {
             @RequestParam String contentType
     ) {
         return ApiResponse.<PresignedUrlResponse>builder()
-                .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType))
-      }
-  
+                .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType)).build();
+    }
+
+
     @Operation(summary = "Xoá tin nhắn ở phía tôi")
     @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
     public ResponseEntity<Void> deleteMessage(
