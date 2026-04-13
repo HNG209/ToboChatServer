@@ -103,13 +103,21 @@ public class RoomServiceImpl implements RoomService {
     }
 
     // TODO: tách hàm này ra, 1 hàm upsertMemberInbox đã có và 1 hàm lưu metadata
-    private void saveRoomToDynamoDB(String roomId, String roomName, RoomType type, List<String> memberIds, String now) {
+    private void saveRoomToDynamoDB(
+            String roomId,
+            String roomName,
+            RoomType type,
+            List<String> memberIds,
+            String now
+    ) {
         String pk = "ROOM#" + roomId;
 
-        // 1. Khởi tạo Transaction
-        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+        TransactWriteItemsEnhancedRequest.Builder txBuilder =
+                TransactWriteItemsEnhancedRequest.builder();
 
-        // 2. Tạo đối tượng Room (METADATA)
+        // =========================
+        // 1. ROOM METADATA
+        // =========================
         Room roomMetadata = Room.builder()
                 .pk(pk)
                 .roomName(roomName)
@@ -118,39 +126,52 @@ public class RoomServiceImpl implements RoomService {
                 .updatedAt(now)
                 .build();
 
-        // Thêm vào transaction (1)
         txBuilder.addPutItem(roomTable, roomMetadata);
 
-        // 3. Tạo các đối tượng RoomMember
+        // =========================
+        // 2. ROOM MEMBERS (UPSERT)
+        // =========================
         for (int i = 0; i < memberIds.size(); i++) {
             String userId = memberIds.get(i);
 
-            String role = (i == 0 && type == RoomType.GROUP) ? "ADMIN" : "MEMBER";
+            boolean isAdmin = (i == 0 && type == RoomType.GROUP);
 
+            String sk = "MEMBER#" + userId;
+
+            // Lưu ý: DynamoDB PUT = UPSERT
             RoomMember member = RoomMember.builder()
                     .pk(pk)
-                    .sk("MEMBER#" + userId)
-                    .role(role)
+                    .sk(sk)
+
+                    // chỉ set role theo init logic (có thể overwrite khi upsert)
+                    .role(isAdmin ? "ADMIN" : "MEMBER")
+
                     .status(InboxStatus.ACTIVE)
+
                     .roomName(roomName)
+
                     .lastActivityAt(now)
+
+                    // createdAt: nếu bạn muốn chuẩn hơn thì chỉ set khi insert (optional)
                     .createdAt(now)
-                    .statusTime("STATUS#ACTIVE#TIME#" + now) // thiếu bị lỗi
+
                     .updatedAt(now)
+
+                    .statusTime("STATUS#ACTIVE#TIME#" + now)
                     .build();
 
-            // Thêm vào transaction (2)
             txBuilder.addPutItem(roomMemberTable, member);
         }
 
-        // 4. Transaction write (1,2)
+        // =========================
+        // 3. EXECUTE TRANSACTION
+        // =========================
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
     }
-
     @Override
     public Room getRoomById(String roomId, boolean skipException) {
         Key key = Key.builder()
