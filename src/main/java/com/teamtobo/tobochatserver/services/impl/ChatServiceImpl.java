@@ -372,8 +372,7 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void forwardToMultipleRooms(String userId, String fromRoomId, List<String> toRoomIds, List<String> messageIds) {
         try {
-            // query tat ca tin nhan day du, lay content
-            // moi phong tao bay nhiu tin nhan voi content
+            UserResponse userResponse = userService.getUserProfile(userId);
             String fromPk = "ROOM#" + fromRoomId;
             for (String toRoomId : toRoomIds) {
                 String toPk = "ROOM#" + toRoomId;
@@ -421,11 +420,14 @@ public class ChatServiceImpl implements ChatService {
                     for (Message msg : newMessages) {
                         for (String memberId : members) {
                             if (memberId.equals(userId)) continue;
+                            // TODO: giải quyết code trùng lặp
                             socketIOServer.getRoomOperations(memberId)
                                     .sendEvent("receive_message",
                                             MessageResponse.builder()
                                                     .id(msg.getSk().replace("MSG#", ""))
+                                                    .user(userResponse)
                                                     .roomId(toRoomId)
+                                                    .createdAt(msg.getCreatedAt())
                                                     .content(msg.getContent())
                                                     .isSelf(false)
                                                     .build());
