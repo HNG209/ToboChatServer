@@ -22,10 +22,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -164,7 +166,7 @@ public class ChatServiceImpl implements ChatService {
 
         // Thực hiện ánh xạ sang DTO duy nhất 1 lần tại đây
         List<MessageResponse> messageResponses = items.stream()
-                .filter(msg -> msg.getDeletedByUserIds() == null || !msg.getDeletedByUserIds().contains(userId)) // Thêm null check cho an toàn
+                .filter(msg -> !msg.getDeletedByUserIds().contains(userId)) // Thêm null check cho an toàn
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isSelf = userId.equals(msg.getSenderId());
@@ -254,9 +256,19 @@ public class ChatServiceImpl implements ChatService {
             // 5. Map sang DTO
             String messageId = Helper.normalizeId(latestMessage.getSk());
 
+            StringBuilder content = new StringBuilder();
+
+            if (latestMessage.getContent() != null && !latestMessage.getContent().isBlank()) {
+                content.append(latestMessage.getContent());
+            }
+
+            if (latestMessage.getAttachments() != null && !latestMessage.getAttachments().isEmpty()) {
+                content.append(latestMessage.getAttachments().size() > 1 ? " [attachments]" : " [attachment]");
+            }
+
             return MessageResponse.builder()
                     .id(messageId)
-                    .content(latestMessage.getContent())
+                    .content(content.toString())
                     .createdAt(latestMessage.getCreatedAt() != null ? latestMessage.getCreatedAt() : messageId)
                     .isSelf(latestMessage.getSenderId().equals(userId))
                     .build();
@@ -400,7 +412,8 @@ public class ChatServiceImpl implements ChatService {
                             .sk("MSG#" + now + "#" + newId)
                             .senderId(userId)
                             .messageStatus(MessageStatus.NORMAL)
-                            .content(original.getContent())
+                            .content(original.getContent().isEmpty() ? null : original.getContent())
+                            .attachments(original.getAttachments())
                             .createdAt(now)
                             .build();
 
@@ -476,67 +489,39 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void deleteMessage(String messageId, String roomId, String userId) {
         try {
-            String cleanRoomId = roomId.contains("_")
-                    ? roomId.substring(0, roomId.indexOf("_"))
-                    : roomId;
+            String pk = "ROOM#" + roomId;
+            String sk = "MSG#" + messageId;
 
-            String pk = "ROOM#" + cleanRoomId + "_" + userId;
-
-            QueryConditional queryConditional = QueryConditional.sortBeginsWith(
-                    Key.builder()
-                            .partitionValue(pk)
-                            .sortValue("MSG#")
-                            .build()
-            );
-
-            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
-                    .queryConditional(queryConditional)
-                    .scanIndexForward(false)
-                    .limit(30)
+            Key key = Key.builder()
+                    .partitionValue(pk)
+                    .sortValue(sk)
                     .build();
 
-            List<Message> messages = messageTable.query(request)
-                    .stream()
-                    .flatMap(page -> page.items().stream())
-                    .toList();
+            // 1. Get item
+            Message message = messageTable.getItem(r -> r.key(key));
+            if (message == null) return;
 
+            // 2. Lấy list hiện tại
+            List<String> deletedList = message.getDeletedByUserIds();
 
-            Message foundMessage = null;
-            for (Message msg : messages) {
-                String sk = msg.getSk();
-                if (sk != null && sk.contains(messageId)) {
-                    foundMessage = msg;
-                    break;
-                }
+            if (deletedList == null) {
+                deletedList = new ArrayList<>();
+            } else {
+                deletedList = new ArrayList<>(deletedList); // clone
             }
 
-            if (foundMessage == null)
-                return;
-
-            // Soft delete
-            List<String> deletedList = new ArrayList<>(
-                    foundMessage.getDeletedByUserIds() != null
-                            ? foundMessage.getDeletedByUserIds()
-                            : new ArrayList<>()
-            );
-
+            // 3. Add nếu chưa có
             if (!deletedList.contains(userId)) {
                 deletedList.add(userId);
+            } else {
+                return;
             }
 
-            Message updatedMessage = Message.builder()
-                    .pk(foundMessage.getPk())
-                    .sk(foundMessage.getSk())
-                    .content(foundMessage.getContent())
-                    .senderId(foundMessage.getSenderId())
-                    .messageType(foundMessage.getMessageType())
-                    .createdAt(foundMessage.getCreatedAt())
-                    .deletedByUserIds(deletedList)
-                    .build();
+            // Set lại vào chính object đã get
+            message.setDeletedByUserIds(deletedList);
+            messageTable.updateItem(message);
 
-            messageTable.updateItem(updatedMessage);
-
-            // Gửi sự kiện cho chính mình (xoá ngay lập tức nếu đang đăng nhập trên thiết bị khác)
+            // emit socket
             socketIOServer.getRoomOperations(userId)
                     .sendEvent("delete_message", MessageResponse.builder()
                             .id(messageId)

@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
@@ -197,7 +198,11 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                     memberIds.stream()
                             .filter(id -> !id.equals(userId))
                             .findFirst()
-                            .ifPresent(otherUserId -> responseBuilder.roomName(userService.getUserProfile(otherUserId).getName()));
+                            .ifPresent(otherUserId -> {
+                                UserResponse userResponse = userService.getUserProfile(otherUserId);
+                                responseBuilder.roomName(userResponse.getName());
+                                responseBuilder.avatarUrl(userResponse.getAvatarUrl());
+                            });
                 }
             } else { // GROUP
                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
