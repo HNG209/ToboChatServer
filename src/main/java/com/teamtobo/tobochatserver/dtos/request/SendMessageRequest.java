@@ -12,6 +12,7 @@ import java.util.List;
 @NoArgsConstructor
 @Builder
 public class SendMessageRequest {
+    String messageId;
     String content;
     String replyTo;
     List<Attachment> attachments;

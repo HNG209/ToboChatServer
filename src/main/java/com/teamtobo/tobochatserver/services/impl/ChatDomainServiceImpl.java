@@ -5,18 +5,22 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
-import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -24,7 +28,8 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
+@Slf4j
 public class ChatDomainServiceImpl implements ChatDomainService {
     private final DynamoDbTable<Message> messageTable;
     private final DynamoDbTable<Room> roomTable;
@@ -32,32 +37,33 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private final RoomService roomService;
     private final UserService userService;
     private final RoomMemberService roomMemberService;
+    private final S3Client s3Client;
+
+    @Value("${aws.s3.bucketName}")
+    private String bucketName;
+    @Value("${aws.region}")
+    private String region;
 
     @Override
     public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
-        // Tích hợp logic cho chat đơn, nhóm, người lạ
         try {
             String now = Instant.now().toString();
-            String messageId = UUID.randomUUID().toString();
-
+            String messageId = request.getMessageId();
             String pk = "ROOM#" + roomId;
             String sk = "MSG#" + now + "#" + messageId;
-
-            // TODO: Kiểm tra người gửi có trong phòng này ko (integrity)
 
             // 1. Lấy danh sách thành viên hiện có
             List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
-            // Nếu phòng chưa tồn tại
+            // Nếu phòng chưa tồn tại (DM tự động tạo)
             if ((memberIds == null || memberIds.isEmpty()) && roomId.contains("_")) {
                 String[] parts = roomId.split("_");
                 if (parts.length == 2) {
                     memberIds = List.of(parts[0], parts[1]);
-                    if(parts[0].equals(parts[1]))
+                    if (parts[0].equals(parts[1]))
                         throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
                 }
 
-                // Nếu vẫn không có thành viên (có thể là mã phòng bị sai)
                 if (memberIds == null || memberIds.isEmpty()) {
                     throw new AppException(ErrorCode.ROOM_NOT_FOUND);
                 }
@@ -69,13 +75,43 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                         .updatedAt(now)
                         .build();
 
-                // Lưu metadata của phòng
                 roomTable.putItem(roomMetadata);
             }
 
-            // TODO: Kiểm tra người nhận có chấp nhận tin nhắn từ người lạ ko
+            // --- 2. XỬ LÝ ATTACHMENTS (PHẦN BỔ SUNG QUAN TRỌNG) ---
+            List<Attachment> finalAttachments = new ArrayList<>();
+            if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+                for (Attachment att : request.getAttachments()) {
+                    try {
+                        // Trích xuất key cũ từ URL tạm (Presigned URL client upload lên)
+                        String sourceKey = extractKeyFromUrl(att.getFileUrl());
 
-            // 2. Lưu Message
+                        // Tạo key mới cho thư mục chính thức: attachments/{roomId}/{uuid}-{fileName}
+                        String fileExtension = att.getFileName().contains(".")
+                                ? att.getFileName().substring(att.getFileName().lastIndexOf(".")) : "";
+                        String destKey = "attachments/" + roomId + "/" + UUID.randomUUID() + fileExtension;
+
+                        // Thực hiện copy file trên S3 từ temp sang official
+                        copyS3ObjectWithRetry(sourceKey, destKey, 3);
+
+                        // Tạo URL chính thức (S3 Static URL)
+                        String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s",
+                                bucketName, region, destKey);
+
+                        finalAttachments.add(Attachment.builder()
+                                .fileName(att.getFileName())
+                                .contentType(att.getContentType())
+                                .fileSize(att.getFileSize())
+                                .fileUrl(finalUrl)
+                                .build());
+                    } catch (Exception e) {
+                        log.error("Lỗi khi copy file đính kèm: {}", att.getFileName(), e);
+                        // Có thể chọn quăng lỗi hoặc tiếp tục tùy business
+                    }
+                }
+            }
+
+            // 3. Lưu Message vào DB
             Message message = Message.builder()
                     .sk(sk)
                     .pk(pk)
@@ -83,26 +119,24 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     .content(request.getContent())
                     .replyTo(request.getReplyTo())
                     .deletedByUserIds(new ArrayList<>())
-                    // .messageType(request.getMessageType())
+                    .attachments(finalAttachments) // Sử dụng list đã qua xử lý S3
+                    .messageStatus(MessageStatus.NORMAL)
+                    .createdAt(now)
                     .build();
 
             messageTable.putItem(message);
 
-            // 3. Upsert Inbox và Gửi Socket
+            // 4. Upsert Inbox và Gửi Socket cho các member
             for (String memberId : memberIds) {
-
                 InboxStatus inboxStatus = InboxStatus.ACTIVE;
 
                 if (!memberId.equals(senderId) && roomId.contains("_")) {
                     FriendStatus friendStatus = userService.getFriendStatus(senderId, memberId);
-                    // Nếu chưa là bạn, đưa vào Tin nhắn chờ (PENDING)
                     inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
                 }
 
-                // Upsert để tạo hoặc cập nhật
                 roomMemberService.upsertMemberInbox(roomId, memberId, inboxStatus, now);
 
-                // Bỏ qua gửi socket cho chính người gửi
                 if (memberId.equals(senderId)) continue;
 
                 socketIOServer.getRoomOperations(memberId)
@@ -112,6 +146,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                                         .roomId(roomId)
                                         .content(message.getContent())
                                         .user(userService.getUserProfile(senderId))
+                                        .attachments(finalAttachments) // Gửi URL sạch cho người nhận
                                         .createdAt(now)
                                         .isSelf(false)
                                         .build());
@@ -119,9 +154,58 @@ public class ChatDomainServiceImpl implements ChatDomainService {
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
-            // Log lỗi thay vì in ra console
-            System.err.println("Lỗi gửi tin nhắn phòng " + roomId + ": " + e.getMessage());
+            log.error("Lỗi gửi tin nhắn phòng {}: {}", roomId, e.getMessage());
             throw new AppException(ErrorCode.UNCATEGORIZED);
+        }
+    }
+
+    /**
+     * Hàm hỗ trợ cắt URL để lấy S3 Key chuẩn.
+     * Loại bỏ toàn bộ phần Domain và các tham số phía sau.
+     */
+    private String extractKeyFromUrl(String url) {
+        if (url == null || url.isEmpty()) return "";
+        try {
+            // Giải mã URL (biến %20 thành khoảng trắng, v.v.)
+            String decodedUrl = java.net.URLDecoder.decode(url, "UTF-8");
+
+            int index = decodedUrl.indexOf("temp-drafts");
+            if (index == -1) return decodedUrl;
+
+            String key = decodedUrl.substring(index);
+            // Loại bỏ phần query string phía sau dấu ? nếu có
+            if (key.contains("?")) {
+                key = key.split("\\?")[0];
+            }
+            return key;
+        } catch (Exception e) {
+            log.error("Lỗi trích xuất S3 Key từ URL: {}", url);
+            return url;
+        }
+    }
+
+    /**
+     * Hàm Copy S3 có cơ chế đợi và thử lại (Retry)
+     */
+    private void copyS3ObjectWithRetry(String sourceKey, String destKey, int maxRetries) throws Exception {
+        int attempts = 0;
+        while (attempts < maxRetries) {
+            try {
+                s3Client.copyObject(CopyObjectRequest.builder()
+                        .sourceBucket(bucketName)
+                        .sourceKey(sourceKey)
+                        .destinationBucket(bucketName)
+                        .destinationKey(destKey)
+                        .build());
+                return; // Thành công thì thoát
+            } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+                attempts++;
+                if (attempts >= maxRetries) throw e;
+
+                log.warn("S3 Key chưa sẵn sàng (404), đang thử lại lần {}... Key: {}", attempts, sourceKey);
+                // Đợi 500ms để S3 kịp index file vừa upload
+                Thread.sleep(500);
+            }
         }
     }
 }

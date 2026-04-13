@@ -13,7 +13,7 @@ public class Helper {
         String[] parts = id.split("#");
 
         // Nếu không có dấu #, trả về nguyên vẹn chuỗi ban đầu.
-        return parts.length > 1 ? parts[1] : id;
+        return parts[parts.length - 1];
     }
     public static String createDeterministicId(String id1, String id2) {
         if(id1.equals(id2)) return "";

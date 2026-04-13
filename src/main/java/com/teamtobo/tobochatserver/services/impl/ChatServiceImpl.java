@@ -53,7 +53,8 @@ public class ChatServiceImpl implements ChatService {
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
-    private static final Region REGION = Region.AP_SOUTHEAST_2;
+    @Value("${aws.region}")
+    private String region;
 
     @Override
     public MessageResponse getRoomMessage(String userId, String roomId, String messageId) {
@@ -313,37 +314,38 @@ public class ChatServiceImpl implements ChatService {
         try {
             String pk = "ROOM#" + roomId;
 
-            // 👇 FIX QUAN TRỌNG: thêm prefix MSG#
-            String sk = "MSG#" + messageId;
+            // 1. Tìm tin nhắn bằng Query thay vì getItem vì chúng ta không có timestamp trong SK
+            // Chúng ta query tất cả tin nhắn trong phòng và filter theo messageId
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                    Key.builder()
+                            .partitionValue(pk)
+                            .sortValue("MSG#")
+                            .build()
+            );
 
-            Key key = Key.builder()
-                    .partitionValue(pk)
-                    .sortValue(sk)
-                    .build();
+            Message message = messageTable.query(r -> r.queryConditional(queryConditional))
+                    .items()
+                    .stream()
+                    .filter(m -> m.getSk() != null && m.getSk().endsWith(messageId))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Tin nhắn không tồn tại"));
 
-            // 1. Lấy message
-            Message message = messageTable.getItem(r -> r.key(key));
-
-            if (message == null) {
-                throw new RuntimeException("Tin nhắn không tồn tại");
-            }
-
-            // 2. Check quyền (chỉ sender được revoke)
+            // 2. Check quyền (chỉ sender được quyền thu hồi)
             if (!message.getSenderId().equals(userId)) {
                 throw new RuntimeException("Không có quyền thu hồi");
             }
 
-            // 3. Nếu đã revoke rồi thì bỏ qua
+            // 3. Nếu đã thu hồi rồi thì không làm gì thêm
             if (message.getMessageStatus() == MessageStatus.REVOKED) {
                 return;
             }
 
-            // 4. Update trạng thái
+            // 4. Update trạng thái tin nhắn thành REVOKED
             message.setMessageStatus(MessageStatus.REVOKED);
-            //  message.setContent("Tin nhắn đã bị thu hồi");
+            // Lưu ý: Không cần setContent ở Backend nếu Frontend đã xử lý hiển thị dựa trên status
             messageTable.updateItem(message);
 
-            // 5. Gửi socket cho tất cả member
+            // 5. Gửi sự kiện Socket cho tất cả thành viên trong phòng để cập nhật UI
             List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
             if (memberIds != null) {
@@ -351,19 +353,20 @@ public class ChatServiceImpl implements ChatService {
                     socketIOServer.getRoomOperations(memberId)
                             .sendEvent("message_revoked",
                                     Map.of(
-                                            "messageId", messageId, // 👈 gửi ID gốc (không có MSG#)
+                                            "messageId", messageId,
                                             "roomId", roomId
                                     ));
                 }
             }
 
+        } catch (RuntimeException e) {
+            log.error("Lỗi nghiệp vụ revoke message: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
-            e.printStackTrace();
-            log.error("Lỗi revoke message: {}", e.getMessage());
-            throw new RuntimeException("Không thể thu hồi tin nhắn", e);
+            log.error("Lỗi hệ thống khi thu hồi tin nhắn: {}", e.getMessage());
+            throw new RuntimeException("Không thể thu hồi tin nhắn lúc này", e);
         }
     }
-
     // nhieu tin nhan cho nhieu phong
     // transaction
     @Override
