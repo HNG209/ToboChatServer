@@ -3,12 +3,10 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.services.ChatRoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
-import com.teamtobo.tobochatserver.services.RoomUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +22,6 @@ public class RoomController {
     private final ChatRoomMemberService chatRoomMemberService;
     private final RoomMemberService roomMemberService;
     private final RoomService roomService;
-    private final RoomUserService roomUserService;
 
     @Operation(summary = "Danh sách phòng đã tham gia")
     @GetMapping
@@ -48,7 +45,7 @@ public class RoomController {
             @PathVariable String roomId) {
         String userId = jwt.getSubject();
 
-        RoomResponse response = roomUserService.getRoomMetadata(userId, roomId);
+        RoomResponse response = roomMemberService.getRoomMetadata(userId, roomId);
         return ApiResponse.<RoomResponse>builder()
                 .result(response)
                 .build();

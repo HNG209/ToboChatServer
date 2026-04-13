@@ -8,6 +8,7 @@ public interface RoomMemberService {
     void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now);
     void updateMemberInbox(String roomId, String memberId, String now);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status);
+    RoomResponse getRoomMetadata(String userId, String roomId);
     void increaseUnreadCount (String senderId, String roomId);
     void markAsReadedMessage (String userId, String roomId);
     int getUnreadCount (String userId, String roomId);

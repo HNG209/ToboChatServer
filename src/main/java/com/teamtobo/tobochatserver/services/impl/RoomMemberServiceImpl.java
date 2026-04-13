@@ -8,10 +8,9 @@ import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
-import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
-import com.teamtobo.tobochatserver.services.RoomService;
-import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -185,12 +184,13 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         // ==========================================
         List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
             Room room = roomService.getRoomById(i.getPk(), false);
-            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
-                    .id(i.getPk())
-                    .unreadMessages(i.getUnreadMessages())
-                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
-                    .roomType(room.getRoomType())
-                    .createdAt(i.getCreatedAt());
+            RoomResponse response = getRoomMetadata(userId, i.getPk());
+            response.setLatestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())));
+//            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
+//                    .id(i.getPk())
+//                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
+//                    .roomType(room.getRoomType())
+//                    .createdAt(i.getCreatedAt());
 
             if (room.getRoomType() == RoomType.DM) {
                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
@@ -200,23 +200,25 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                             .findFirst()
                             .ifPresent(otherUserId -> {
                                 UserResponse userResponse = userService.getUserProfile(otherUserId);
-                                responseBuilder.roomName(userResponse.getName());
-                                responseBuilder.avatarUrl(userResponse.getAvatarUrl());
+                                response.setRoomName(userResponse.getName());
+                                response.setAvatarUrl(userResponse.getAvatarUrl());
                             });
                 }
-            } else { // GROUP
-                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-                if (memberIds.size() > 2) {
-                    String groupName = memberIds.stream()
-                            .limit(3)
-                            .map(memberId -> userService.getUserProfile(memberId).getName())
-                            .collect(Collectors.joining(", "));
-                    responseBuilder.roomName(groupName);
-                } else {
-                    responseBuilder.roomName(i.getRoomName());
-                }
             }
-            return responseBuilder.build();
+//            else { // GROUP
+//                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
+//                if (memberIds.size() > 2) {
+//                    String groupName = memberIds.stream()
+//                            .limit(3)
+//                            .map(memberId -> userService.getUserProfile(memberId).getName())
+//                            .collect(Collectors.joining(", "));
+//                    responseBuilder.roomName(groupName);
+//                } else {
+//                    responseBuilder.roomName(i.getRoomName());
+//                }
+//            }
+//            return responseBuilder.build();
+            return response;
         }).toList();
 
         return PageResponse.<RoomResponse>builder()
@@ -224,8 +226,74 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .nextCursor(nextCursor)
                 .build();
     }
+
     @Override
-    public int getUnreadCount (String userId, String roomId) {
+    public RoomResponse getRoomMetadata(String userId, String roomId) { // lấy tên phòng
+        Room room = roomService.getRoomById(roomId, true);
+
+        if (room == null) { // Fallback khi phòng chưa tồn tại
+            String[] parts = roomId.split("_");
+
+            if (parts.length != 2) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+
+            // Lấy ID của người kia bằng cách loại trừ ID của chính mình
+            String otherUserId = parts[0].equals(userId) ? parts[1] :
+                    (parts[1].equals(userId) ? parts[0] : null);
+
+            // Nếu user hiện tại không nằm trong chuỗi ID phòng
+            if (otherUserId == null) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+
+            UserResponse stranger = userService.getUserProfile(otherUserId);
+
+            return RoomResponse.builder()
+                    .id(roomId)
+                    .roomName(stranger.getName())
+                    .avatarUrl(stranger.getAvatarUrl())
+                    .roomType(RoomType.DM)
+                    .build();
+        }
+
+        int unreadCount = getUnreadCount(userId, roomId);
+        if (room.getRoomType() == RoomType.DM) {
+            List<String> memberIds = roomService.getMembersByRoomId(roomId);
+            if (memberIds.size() <= 2) {
+                memberIds.stream()
+                        .filter(id -> !id.equals(userId))
+                        .findFirst().ifPresent(otherUserId -> {
+                            UserResponse other = userService.getUserProfile(otherUserId);
+                            room.setRoomName(other.getName());
+                            room.setAvatarUrl(other.getAvatarUrl());
+                        });
+
+            }
+        } else { // GROUP
+//            List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
+//            if (memberIds.size() > 2) {
+//                String groupName = memberIds.stream()
+//                        .limit(3)
+//                        .map(memberId -> userService.getUserProfile(memberId).getName())
+//                        .collect(Collectors.joining(", "));
+//                responseBuilder.roomName(groupName);
+//            } else {
+//                responseBuilder.roomName(i.getRoomName());
+//            }
+        }
+
+        return RoomResponse.builder()
+                .id(roomId)
+                .roomName(room.getRoomName())
+                .avatarUrl(room.getAvatarUrl())
+                .roomType(room.getRoomType())
+                .unreadMessages(unreadCount)
+                .build();
+    }
+
+    @Override
+    public int getUnreadCount(String userId, String roomId) {
         String cleanRoomId = Helper.normalizeId(roomId);
         String cleanUserId = Helper.normalizeId(userId);
 
