@@ -16,6 +16,7 @@ import lombok.experimental.FieldDefaults;
 public class RoomResponse {
     String id;
     String roomName;
+    String avatarUrl;
     RoomType roomType;
     MessageResponse latestMessage;
     String createdAt;

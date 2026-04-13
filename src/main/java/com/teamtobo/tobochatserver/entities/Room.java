@@ -20,6 +20,7 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class Room extends BaseEntity { // Room metadata
     String roomName;
+    String avatarUrl;
     RoomType roomType;
 
     @Override

@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -24,7 +25,7 @@ public class RoomUserServiceImpl implements RoomUserService {
     public RoomResponse getRoomMetadata(String userId, String roomId) { // lấy tên phòng
         Room room = roomService.getRoomById(roomId, true);
 
-        if (room == null) { // Fallback
+        if (room == null) { // Fallback khi phòng chưa tồn tại
             String[] parts = roomId.split("_");
 
             if (parts.length != 2) {
@@ -35,17 +36,17 @@ public class RoomUserServiceImpl implements RoomUserService {
             String otherUserId = parts[0].equals(userId) ? parts[1] :
                     (parts[1].equals(userId) ? parts[0] : null);
 
-            // Nếu user hiện tại không nằm trong chuỗi ID phòng -> Không cho phép
+            // Nếu user hiện tại không nằm trong chuỗi ID phòng
             if (otherUserId == null) {
                 throw new AppException(ErrorCode.ROOM_INVALID);
             }
 
-            // Gọi UserService lấy tên người lạ
-            String strangerName = userService.getUserProfile(otherUserId).getName();
+            UserResponse stranger = userService.getUserProfile(otherUserId);
 
             return RoomResponse.builder()
                     .id(roomId)
-                    .roomName(strangerName)
+                    .roomName(stranger.getName())
+                    .avatarUrl(stranger.getAvatarUrl())
                     .roomType(RoomType.DM)
                     .build();
         }
@@ -56,7 +57,11 @@ public class RoomUserServiceImpl implements RoomUserService {
             if (memberIds.size() <= 2) {
                 memberIds.stream()
                         .filter(id -> !id.equals(userId))
-                        .findFirst().ifPresent(otherUserId -> room.setRoomName(userService.getUserProfile(otherUserId).getName()));
+                        .findFirst().ifPresent(otherUserId -> {
+                            UserResponse other = userService.getUserProfile(otherUserId);
+                            room.setRoomName(other.getName());
+                            room.setAvatarUrl(other.getAvatarUrl());
+                        });
 
             }
         } else { // GROUP
@@ -75,6 +80,7 @@ public class RoomUserServiceImpl implements RoomUserService {
         return RoomResponse.builder()
                 .id(roomId)
                 .roomName(room.getRoomName())
+                .avatarUrl(room.getAvatarUrl())
                 .roomType(room.getRoomType())
                 .unreadMessages(unreadCount)
                 .build();
