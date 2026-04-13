@@ -7,5 +7,5 @@ import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 
 public interface ChatRoomMemberService {
     PageResponse<MessageResponse> getMessageAndMarkAsRead(String userId, String roomId, String cursor, int limit, String direction);
-    void sendMessageAndIncreaseUnread (String senderId, String roomId, SendMessageRequest request);
+    MessageResponse sendMessageAndIncreaseUnread (String senderId, String roomId, SendMessageRequest request);
 }

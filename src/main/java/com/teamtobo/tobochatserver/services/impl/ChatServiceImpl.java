@@ -58,6 +58,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public MessageResponse getRoomMessage(String userId, String roomId, String messageId) {
+        // TODO: Check xem user hiện tại (userId) có trong phòng này ko (integrity)
         Message message = messageTable.getItem(Key.builder()
                 .partitionValue("ROOM#" + roomId)
                 .sortValue("MSG#" + messageId)
@@ -171,15 +172,14 @@ public class ChatServiceImpl implements ChatService {
 
                     return MessageResponse.builder()
                             .id(messageId)
-                            .content(msg.getContent())
-                            // Thêm null check cho replyTo để tránh lỗi khi fetch
-                            .replyTo(msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
+                            // Tin nhắn đã thu hồi ko cần trả về content và replyTo
+                            .content(msg.getMessageStatus() == MessageStatus.REVOKED ? null : msg.getContent())
+                            .replyTo(msg.getReplyTo() != null && msg.getMessageStatus() != MessageStatus.REVOKED ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
                             .createdAt(msg.getCreatedAt())
                             .isSelf(isSelf)
                             .user(userResponse)
                             .attachments(msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
-                            // .messageType(msg.getMessageType())
                             .build();
                 }).collect(Collectors.toList());
 

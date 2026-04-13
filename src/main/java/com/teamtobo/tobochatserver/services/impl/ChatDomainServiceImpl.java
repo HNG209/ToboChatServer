@@ -30,6 +30,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+// Các class khác không được dùng class này, tránh lỗi circular dependencies
 public class ChatDomainServiceImpl implements ChatDomainService {
     private final DynamoDbTable<Message> messageTable;
     private final DynamoDbTable<Room> roomTable;
@@ -37,6 +38,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private final RoomService roomService;
     private final UserService userService;
     private final RoomMemberService roomMemberService;
+    private final ChatService chatService;
     private final S3Client s3Client;
 
     @Value("${aws.s3.bucketName}")
@@ -45,12 +47,13 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private String region;
 
     @Override
-    public void sendMessage(String senderId, String roomId, SendMessageRequest request) {
+    public MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
             String now = Instant.now().toString();
-            String messageId = request.getMessageId();
+            String messageId = UUID.randomUUID().toString();
             String pk = "ROOM#" + roomId;
             String sk = "MSG#" + now + "#" + messageId;
+            String part = now + "#" + messageId;
 
             // 1. Lấy danh sách thành viên hiện có
             List<String> memberIds = roomService.getMembersByRoomId(roomId);
@@ -126,6 +129,17 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             messageTable.putItem(message);
 
+            MessageResponse messageResponse = MessageResponse.builder()
+                    .id(part)
+                    .roomId(roomId)
+                    .content(message.getContent())
+                    .user(userService.getUserProfile(senderId))
+                    .replyTo(chatService.getRoomMessage(senderId, roomId, request.getReplyTo()))
+                    .attachments(finalAttachments) // Gửi URL sạch cho người nhận
+                    .createdAt(now)
+                    .isSelf(false)
+                    .build();
+
             // 4. Upsert Inbox và Gửi Socket cho các member
             for (String memberId : memberIds) {
                 InboxStatus inboxStatus = InboxStatus.ACTIVE;
@@ -140,17 +154,10 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 if (memberId.equals(senderId)) continue;
 
                 socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("receive_message",
-                                MessageResponse.builder()
-                                        .id(Helper.normalizeId(message.getSk()))
-                                        .roomId(roomId)
-                                        .content(message.getContent())
-                                        .user(userService.getUserProfile(senderId))
-                                        .attachments(finalAttachments) // Gửi URL sạch cho người nhận
-                                        .createdAt(now)
-                                        .isSelf(false)
-                                        .build());
+                        .sendEvent("receive_message", messageResponse);
             }
+
+            return messageResponse; // Chứa id thực tế của message đã lưu
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {

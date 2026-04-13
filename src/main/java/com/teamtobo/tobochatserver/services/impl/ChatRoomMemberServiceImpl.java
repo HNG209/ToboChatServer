@@ -44,9 +44,10 @@ public class ChatRoomMemberServiceImpl implements ChatRoomMemberService {
         return chatService.getMessages(userId, roomId, cursor, limit, direction);
     }
 
+    // TODO: Bỏ hàm này, loại bớt sự phụ thuộc
     @Override
-    public void sendMessageAndIncreaseUnread(String senderId, String roomId, SendMessageRequest request) {
-        chatDomainService.sendMessage(senderId, roomId, request);
+    public MessageResponse sendMessageAndIncreaseUnread(String senderId, String roomId, SendMessageRequest request) {
+        MessageResponse result = chatDomainService.sendMessage(senderId, roomId, request);
         roomMemberService.increaseUnreadCount(senderId, roomId);
 
         List<String> memberIds = roomService.getMembersByRoomId(roomId);
@@ -59,5 +60,7 @@ public class ChatRoomMemberServiceImpl implements ChatRoomMemberService {
                 ));
             }
         }
+
+        return result;
     }
 }

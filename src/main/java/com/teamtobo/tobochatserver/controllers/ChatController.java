@@ -48,15 +48,15 @@ public class ChatController {
 
     @Operation(summary = "Gửi message")
     @PostMapping("/rooms/{roomId}/messages")
-    public ResponseEntity<Void> sendMessage(
+    public ApiResponse<MessageResponse> sendMessage(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @RequestBody SendMessageRequest request) {
         String senderId = jwt.getSubject();
 
-        chatRoomMemberService.sendMessageAndIncreaseUnread(senderId, roomId, request);
-
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<MessageResponse>builder()
+                .result(chatRoomMemberService.sendMessageAndIncreaseUnread(senderId, roomId, request))
+                .build();
     }
 
     @Operation(summary = "Xóa tin nhắn trong phòng")
