@@ -6,10 +6,7 @@ import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
-import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
-import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
-import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
@@ -47,7 +44,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private String region;
 
     @Override
-    public MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request) {
+    public MessageResponse sendMessage(String senderId, String roomId, MessageType messageType, SendMessageRequest request) {
         try {
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
@@ -124,6 +121,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     .deletedByUserIds(new ArrayList<>())
                     .attachments(finalAttachments) // Sử dụng list đã qua xử lý S3
                     .messageStatus(MessageStatus.NORMAL)
+                    .messageType(messageType)
                     .createdAt(now)
                     .build();
 

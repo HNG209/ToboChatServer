@@ -7,6 +7,8 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
+import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
@@ -47,7 +49,7 @@ public class ChatRoomMemberServiceImpl implements ChatRoomMemberService {
     // TODO: Bỏ hàm này, loại bớt sự phụ thuộc
     @Override
     public MessageResponse sendMessageAndIncreaseUnread(String senderId, String roomId, SendMessageRequest request) {
-        MessageResponse result = chatDomainService.sendMessage(senderId, roomId, request);
+        MessageResponse result = chatDomainService.sendMessage(senderId, roomId, MessageType.USER, request);
         roomMemberService.increaseUnreadCount(senderId, roomId);
 
         List<String> memberIds = roomService.getMembersByRoomId(roomId);

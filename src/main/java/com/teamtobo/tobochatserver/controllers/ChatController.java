@@ -87,11 +87,11 @@ public class ChatController {
             return ResponseEntity.badRequest().body("Thiếu dữ liệu");
         }
 
-        chatService.forwardToMultipleRooms(
+        chatService.forwardMessages(
                 userId,
                 request.getFromRoomId(),
-                request.getToRoomIds(),
-                request.getMessageIds()
+                request.getMessageIds(),
+                request.getToRoomIds()
         );
 
         return ResponseEntity.ok("Forward thành công");

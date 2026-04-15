@@ -9,13 +9,11 @@ import java.util.List;
 
 public interface ChatService {
     MessageResponse getRoomMessage(String userId, String roomId, String messageId);
+    MessageResponse getMessage(String messageId, String roomId);
     PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit, String direction);
     MessageResponse getLatestMessage(String userId, String roomId);
     void revokeMessage(String userId, String roomId, String messageId);
-    void forwardToMultipleRooms( String userId,
-                                 String fromRoomId,
-                                 List<String> toRoomIds,
-                                 List<String> messageIds);
+    void forwardMessages(String userId, String fromRoomId, List<String> messageIds, List<String> toRoomIds);
     PresignedUrlResponse generateAttachmentPresignedUrl(String fileName, String roomId, String contentType);
     void deleteMessage(String messageId, String roomId, String userId);
 }

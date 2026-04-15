@@ -8,6 +8,7 @@ import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
@@ -76,6 +77,31 @@ public class ChatServiceImpl implements ChatService {
                 .build();
     }
 
+    public Message getMessageById(String messageId, String roomId) {
+        Message message = messageTable.getItem(r -> r.key(
+                Key.builder()
+                        .partitionValue("ROOM#" + roomId)
+                        .sortValue("MSG#" + messageId)
+                        .build()));
+
+        if (message == null)
+            throw new AppException(ErrorCode.MESSAGE_NOT_FOUND);
+        return message;
+    }
+
+    @Override
+    public MessageResponse getMessage(String messageId, String roomId) {
+        Message message = getMessageById(messageId, roomId);
+
+        return MessageResponse.builder()
+                .content(message.getContent())
+                .attachments(message.getAttachments())
+                .createdAt(message.getCreatedAt())
+                .messageStatus(message.getMessageStatus())
+                .roomId(roomId)
+                .build();
+    }
+
     @Override
     public PageResponse<MessageResponse> getMessages(
             String userId,
@@ -87,12 +113,11 @@ public class ChatServiceImpl implements ChatService {
         String pk = "ROOM#" + roomId;
         List<Message> items = new ArrayList<>();
 
-        // Biến phân trang dùng riêng cho trường hợp "both"
+        // Dùng riêng cho trường hợp "both"
         boolean hasMoreOlderBoth = false;
         boolean hasMoreNewerBoth = false;
         Map<String, AttributeValue> lastEvaluatedKeyOriginal = null;
 
-        // 1. FETCH DATA TỪ DYNAMODB
         if ("both".equals(direction) && cursor != null && !cursor.isEmpty()) {
             Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
             int halfLimit = limit / 2;
@@ -128,7 +153,6 @@ public class ChatServiceImpl implements ChatService {
             }
 
         } else {
-            // LOGIC CŨ CHO "before", "after" HOẶC LOAD LẦN ĐẦU
             QueryConditional queryConditional;
             if (cursor != null && !cursor.isEmpty()) {
                 Key key = Key.builder().partitionValue(pk).sortValue(cursor).build();
@@ -157,30 +181,30 @@ public class ChatServiceImpl implements ChatService {
             }
         }
 
-        // 2. FILTER VÀ MAP SANG DTO
         // Lọc bỏ null và các record không phải là message
         items = items.stream()
                 .filter(Objects::nonNull)
                 .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
                 .collect(Collectors.toList());
 
-        // Thực hiện ánh xạ sang DTO duy nhất 1 lần tại đây
+        // DTO mapping
         List<MessageResponse> messageResponses = items.stream()
-                .filter(msg -> !msg.getDeletedByUserIds().contains(userId)) // Thêm null check cho an toàn
+                .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isSelf = userId.equals(msg.getSenderId());
+                    boolean isRevoked = msg.getMessageStatus() == MessageStatus.REVOKED;
                     UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
 
                     return MessageResponse.builder()
                             .id(messageId)
                             // Tin nhắn đã thu hồi ko cần trả về content và replyTo
-                            .content(msg.getMessageStatus() == MessageStatus.REVOKED ? null : msg.getContent())
-                            .replyTo(msg.getReplyTo() != null && msg.getMessageStatus() != MessageStatus.REVOKED ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
+                            .content(isRevoked ? null : msg.getContent())
+                            .replyTo(!isRevoked && msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
                             .createdAt(msg.getCreatedAt())
                             .isSelf(isSelf)
                             .user(userResponse)
-                            .attachments(msg.getAttachments())
+                            .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
                             .build();
                 }).collect(Collectors.toList());
@@ -379,77 +403,58 @@ public class ChatServiceImpl implements ChatService {
             throw new RuntimeException("Không thể thu hồi tin nhắn lúc này", e);
         }
     }
-    // nhieu tin nhan cho nhieu phong
-    // transaction
+
     @Override
-    public void forwardToMultipleRooms(String userId, String fromRoomId, List<String> toRoomIds, List<String> messageIds) {
+    public void forwardMessages(String userId, String fromRoomId, List<String> messageIds, List<String> toRoomIds) {
         try {
+            String now = Instant.now().toString();
             UserResponse userResponse = userService.getUserProfile(userId);
-            String fromPk = "ROOM#" + fromRoomId;
+            List<Message> originalMessages = messageIds.stream()
+                    .map(id -> getMessageById(id, fromRoomId))
+                    .filter(msg -> msg.getMessageStatus() != MessageStatus.REVOKED)
+                    .toList();
+
             for (String toRoomId : toRoomIds) {
                 String toPk = "ROOM#" + toRoomId;
                 List<Message> newMessages = new ArrayList<>();
-                for (String messageId : messageIds) {
-                    String sk = "MSG#" + messageId;
-                    //1. Lay message goc
-                    Message original = messageTable.getItem(r -> r.key(
-                            Key.builder()
-                                    .partitionValue(fromPk)
-                                    .sortValue(sk)
-                                    .build()));
-
-                    if (original == null) throw new RuntimeException("Không tìm thấy message: " + messageId);
-
-                    // bo qua tin nhan da revoke
-                    if (original.getMessageStatus() == MessageStatus.REVOKED) {
-                        continue;
-                    }
-
-                    //2. Tao message moi
-                    String now = Instant.now().toString();
+                for (Message message : originalMessages) {
                     String newId = UUID.randomUUID().toString();
                     Message newMsg = Message.builder().pk(toPk)
                             .sk("MSG#" + now + "#" + newId)
                             .senderId(userId)
                             .messageStatus(MessageStatus.NORMAL)
-                            .content(original.getContent().isEmpty() ? null : original.getContent())
-                            .attachments(original.getAttachments())
+                            .messageType(MessageType.FORWARDED)
+                            .content(message.getContent().isEmpty() ? null : message.getContent())
+                            .attachments(message.getAttachments())
                             .createdAt(now)
                             .build();
 
                     newMessages.add(newMsg);
                 }
+                newMessages.forEach(messageTable::putItem);
 
-                // 3. Lưu DB
-                for (Message msg : newMessages) {
-                    messageTable.putItem(msg);
-                }
-
-                // 4. Gửi socket
                 List<String> members = roomService.getMembersByRoomId(toRoomId);
+                if (members == null) continue;
 
                 // TODO: xử lí trong hàng đợi
-                if (members != null) {
-                    for (Message msg : newMessages) {
-                        for (String memberId : members) {
-                            if (memberId.equals(userId)) continue;
-                            // TODO: giải quyết code trùng lặp
-                            socketIOServer.getRoomOperations(memberId)
-                                    .sendEvent("receive_message",
-                                            MessageResponse.builder()
-                                                    .id(msg.getSk().replace("MSG#", ""))
-                                                    .user(userResponse)
-                                                    .roomId(toRoomId)
-                                                    .createdAt(msg.getCreatedAt())
-                                                    .content(msg.getContent())
-                                                    .isSelf(false)
-                                                    .build());
-                        }
+                for (Message msg : newMessages) {
+                    for (String memberId : members) {
+                        if (memberId.equals(userId)) continue;
+                        // TODO: giải quyết code trùng lặp
+                        socketIOServer.getRoomOperations(memberId)
+                                .sendEvent("receive_message",
+                                        MessageResponse.builder()
+                                                .id(msg.getSk().replace("MSG#", ""))
+                                                .user(userResponse)
+                                                .roomId(toRoomId)
+                                                .createdAt(msg.getCreatedAt())
+                                                .attachments(msg.getAttachments())
+                                                .content(msg.getContent())
+                                                .isSelf(false)
+                                                .build());
                     }
                 }
-
             }
-
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException("Không thể forward nhiều phòng", e);
