@@ -277,6 +277,8 @@ public class ChatServiceImpl implements ChatService {
                 return null;
             }
 
+            boolean isRevoked = latestMessage.getMessageStatus() == MessageStatus.REVOKED;
+
             // 5. Map sang DTO
             String messageId = Helper.normalizeId(latestMessage.getSk());
 
@@ -292,7 +294,8 @@ public class ChatServiceImpl implements ChatService {
 
             return MessageResponse.builder()
                     .id(messageId)
-                    .content(content.toString())
+                    .content(isRevoked ? "Tin nhắn đã được thu hồi" : content.toString())
+                    .messageStatus(latestMessage.getMessageStatus())
                     .createdAt(latestMessage.getCreatedAt() != null ? latestMessage.getCreatedAt() : messageId)
                     .isSelf(latestMessage.getSenderId().equals(userId))
                     .build();
