@@ -299,7 +299,7 @@ public class ChatServiceImpl implements ChatService {
     private MessageResponse mapToResponse(Message message, String userId) {
         boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
 
-        String messageId = Helper.normalizeId(message.getSk());
+        String messageId = message.getSk().replaceFirst("^MSG#", "");
 
         StringBuilder content = new StringBuilder();
 
