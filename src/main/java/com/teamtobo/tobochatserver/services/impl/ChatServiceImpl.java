@@ -251,59 +251,77 @@ public class ChatServiceImpl implements ChatService {
         try {
             String pk = "ROOM#" + roomId;
 
-            // 1. Tạo điều kiện tìm kiếm
             Key searchKey = Key.builder()
                     .partitionValue(pk)
                     .sortValue("MSG#")
                     .build();
+
             QueryConditional queryConditional = QueryConditional.sortBeginsWith(searchKey);
 
-            // 2. Lấy 1 dòng mới nhất
-            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
-                    .queryConditional(queryConditional)
-                    .scanIndexForward(false) // Lấy từ dưới lên (Z-A)
-                    .limit(1)
-                    .build();
+            Map<String, AttributeValue> lastEvaluatedKey = null;
 
-            // 3. Thực thi truy vấn
-            Message latestMessage = messageTable.query(request)
-                    .items() // Lấy luồng dữ liệu
-                    .stream()
-                    .findFirst() // Lấy phần tử đầu tiên của trang đầu tiên
-                    .orElse(null);
+            do { // Loop đến tin nhắn hợp lệ nếu tin nhắn mới nhất bị xoá
+                QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                        .queryConditional(queryConditional)
+                        .scanIndexForward(false) // mới nhất -> cũ nhất
+                        .limit(20); // có thể chỉnh 20–50
 
-            // 4. Nếu phòng chưa có tin nhắn nào
-            if (latestMessage == null) {
-                return null;
-            }
+                if (lastEvaluatedKey != null) {
+                    builder.exclusiveStartKey(lastEvaluatedKey);
+                }
 
-            boolean isRevoked = latestMessage.getMessageStatus() == MessageStatus.REVOKED;
+                Page<Message> page = messageTable.query(builder.build()).iterator().next();
 
-            // 5. Map sang DTO
-            String messageId = Helper.normalizeId(latestMessage.getSk());
+                for (Message msg : page.items()) {
 
-            StringBuilder content = new StringBuilder();
+                    // skip nếu user đã xoá
+                    if (isDeletedForUser(msg, userId)) {
+                        continue;
+                    }
 
-            if (latestMessage.getContent() != null && !latestMessage.getContent().isBlank()) {
-                content.append(latestMessage.getContent());
-            }
+                    // xử lý message hợp lệ đầu tiên
+                    return mapToResponse(msg, userId);
+                }
 
-            if (latestMessage.getAttachments() != null && !latestMessage.getAttachments().isEmpty()) {
-                content.append(latestMessage.getAttachments().size() > 1 ? " [attachments]" : " [attachment]");
-            }
+                lastEvaluatedKey = page.lastEvaluatedKey();
 
-            return MessageResponse.builder()
-                    .id(messageId)
-                    .content(isRevoked ? "Tin nhắn đã được thu hồi" : content.toString())
-                    .messageStatus(latestMessage.getMessageStatus())
-                    .createdAt(latestMessage.getCreatedAt() != null ? latestMessage.getCreatedAt() : messageId)
-                    .isSelf(latestMessage.getSenderId().equals(userId))
-                    .build();
+            } while (lastEvaluatedKey != null);
+
+            // không còn message hợp lệ
+            return null;
 
         } catch (Exception e) {
             log.error("Lỗi khi lấy tin nhắn mới nhất phòng {}: {}", roomId, e.getMessage());
             return null;
         }
+    }
+
+    private MessageResponse mapToResponse(Message message, String userId) {
+        boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
+
+        String messageId = Helper.normalizeId(message.getSk());
+
+        StringBuilder content = new StringBuilder();
+
+        if (message.getContent() != null && !message.getContent().isBlank()) {
+            content.append(message.getContent());
+        }
+
+        if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
+            content.append(message.getAttachments().size() > 1 ? " [attachments]" : " [attachment]");
+        }
+
+        return MessageResponse.builder()
+                .id(messageId)
+                .content(isRevoked ? "Tin nhắn đã được thu hồi" : content.toString())
+                .messageStatus(message.getMessageStatus())
+                .createdAt(message.getCreatedAt() != null ? message.getCreatedAt() : messageId)
+                .isSelf(message.getSenderId().equals(userId))
+                .build();
+    }
+
+    private boolean isDeletedForUser(Message msg, String userId) {
+        return msg.getDeletedByUserIds() != null && msg.getDeletedByUserIds().contains(userId);
     }
 
     /**
