@@ -20,6 +20,7 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     String email;
     String dob;
     String avatarUrl;
+    boolean allowAutoAddToGroup = true;
 
     String searchPk;
     String searchSk;

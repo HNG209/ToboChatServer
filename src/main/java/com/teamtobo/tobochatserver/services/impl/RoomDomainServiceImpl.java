@@ -2,9 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
-import com.teamtobo.tobochatserver.entities.Message;
-import com.teamtobo.tobochatserver.entities.Room;
-import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
@@ -31,6 +29,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     private final UserService userService;
     private final RoomService roomService;
+
+    private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
     @Override
     public void createRoom(String userId, RoomCreateRequest request, RoomType roomType) {
         List<String> memberIds = new ArrayList<>(request.getMemberIds());
@@ -71,25 +71,89 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 if (uniqueMembers.size() < 3) {
                     throw new AppException(ErrorCode.GROUP_SIZE_INVALID);
                 }
+
                 if (request.getRoomName() == null || request.getRoomName().trim().isEmpty()) {
                     throw new AppException(ErrorCode.ROOM_NAME_REQUIRED);
                 }
 
-                // Kiểm tra những người trong danh sách có là bạn bè với userId ko
-                uniqueMembers.stream()
-                        .filter(m -> !m.equals(userId))
-                        .forEach(m -> {
-                                    if (userService.getFriendStatus(userId, m) != FriendStatus.FRIEND)
-                                        throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
-                                }
-                        );
+                // 2. Chuẩn bị list
+                List<String> acceptedMembers = new ArrayList<>();
+                List<String> pendingMembers = new ArrayList<>();
 
-                // 2. Tạo Random ID cho nhóm
+                // 3. Filter
+                for (String memberId : uniqueMembers) {
+
+                    // luôn giữ người tạo
+                    if (memberId.equals(userId)) {
+                        acceptedMembers.add(memberId);
+                        continue;
+                    }
+
+                    // check friend
+                    if (userService.getFriendStatus(userId, memberId) != FriendStatus.FRIEND) {
+                        throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
+                    }
+
+                    // check setting
+                    User user = userService.getUserById(memberId);
+
+                    if (user.isAllowAutoAddToGroup()) {
+                        acceptedMembers.add(memberId);
+                    } else {
+                        pendingMembers.add(memberId);
+                    }
+                }
+
+                // 4. Validate lại sau filter
+//                if (acceptedMembers.size() < 3) {
+//                    throw new AppException(ErrorCode.GROUP_SIZE_INVALID);
+//                }
+
+                // 5. Tạo roomId
                 String roomId = UUID.randomUUID().toString();
 
-                // 3. Ghi xuống DB
-                saveRoomToDynamoDB(userId, roomId, request.getRoomName(), roomType, uniqueMembers, now);
+                // 6. Lưu room (chỉ acceptedMembers)
+                saveRoomToDynamoDB(
+                        userId,
+                        roomId,
+                        request.getRoomName(),
+                        roomType,
+                        acceptedMembers,
+                        now
+                );
+
+                // 7. Tạo request cho pending
+                for (String pendingUserId : pendingMembers) {
+                    GroupAcceptRequest req = GroupAcceptRequest.builder()
+                            .pk("USER#" + pendingUserId)
+                            .sk("ROOM_ACCEPT#" + roomId)
+                            .roomId(roomId)
+                            .inviterId(userId)
+                            .roomName(request.getRoomName())
+                            .build();
+
+                    try {
+                        groupAcceptRequestTable.putItem(req);
+                    } catch (Exception e) {
+                        throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
+                    }
+                }
             }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     }
     private void saveRoomToDynamoDB(

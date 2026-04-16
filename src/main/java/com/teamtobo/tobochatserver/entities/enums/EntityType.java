@@ -6,5 +6,6 @@ public enum EntityType {
     MESSAGE,
     ROOM,
     ROOM_MEMBER,
-    USER
+    USER,
+    GROUP_ACCEPT_REQUEST,
 }
