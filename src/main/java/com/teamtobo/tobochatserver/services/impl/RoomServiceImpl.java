@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -31,58 +32,8 @@ import static com.teamtobo.tobochatserver.utils.Helper.createDeterministicId;
 @Slf4j
 @RequiredArgsConstructor
 public class RoomServiceImpl implements RoomService {
-    private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<Room> roomTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
-    @Override
-    public void createRoom(RoomCreateRequest request, RoomType roomType) {
-        // Loại bỏ các ID trùng lặp
-        List<String> uniqueMembers = request.getMemberIds().stream()
-                .distinct()
-                .collect(Collectors.toList());
-
-        String now = Instant.now().toString(); // Dùng chuẩn ISO 8601 cho thời gian
-
-        switch (roomType) {
-            case DM -> {
-                // 1. Validate DM
-                if (uniqueMembers.size() != 2) {
-                    throw new AppException(ErrorCode.ROOM_INVALID);
-                }
-
-                // 2. Tạo Deterministic ID
-                Collections.sort(uniqueMembers);
-                String roomId = uniqueMembers.get(0) + "_" + uniqueMembers.get(1);
-
-                // Kiểm tra xem phòng DM này đã tồn tại chưa
-                Room existedRoom = getRoomById(roomId, true);
-                if (existedRoom != null) return;
-
-                // DM room không cần tên cụ thể
-                String roomName = "Direct Message";
-
-                // 3. Ghi xuống DB
-                saveRoomToDynamoDB(roomId, roomName, roomType, uniqueMembers, now);
-            }
-
-            case GROUP -> {
-                // 1. Validate Group
-                if (uniqueMembers.size() < 3) {
-                    throw new AppException(ErrorCode.ROOM_INVALID);
-                }
-                if (request.getRoomName() == null || request.getRoomName().trim().isEmpty()) {
-                    throw new AppException(ErrorCode.ROOM_INVALID);
-                }
-
-                // 2. Tạo Random ID cho nhóm
-                String roomId = UUID.randomUUID().toString();
-
-                // 3. Ghi xuống DB
-                saveRoomToDynamoDB(roomId, request.getRoomName(), roomType, uniqueMembers, now);
-            }
-        }
-    }
-
     @Override
     public List<String> getMembersByRoomId(String roomId) {
         // 1. Tạo điều kiện truy vấn
@@ -102,76 +53,6 @@ public class RoomServiceImpl implements RoomService {
                 .collect(Collectors.toList());
     }
 
-    // TODO: tách hàm này ra, 1 hàm upsertMemberInbox đã có và 1 hàm lưu metadata
-    private void saveRoomToDynamoDB(
-            String roomId,
-            String roomName,
-            RoomType type,
-            List<String> memberIds,
-            String now
-    ) {
-        String pk = "ROOM#" + roomId;
-
-        TransactWriteItemsEnhancedRequest.Builder txBuilder =
-                TransactWriteItemsEnhancedRequest.builder();
-
-        // =========================
-        // 1. ROOM METADATA
-        // =========================
-        Room roomMetadata = Room.builder()
-                .pk(pk)
-                .roomName(roomName)
-                .roomType(type)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        txBuilder.addPutItem(roomTable, roomMetadata);
-
-        // =========================
-        // 2. ROOM MEMBERS (UPSERT)
-        // =========================
-        for (int i = 0; i < memberIds.size(); i++) {
-            String userId = memberIds.get(i);
-
-            boolean isAdmin = (i == 0 && type == RoomType.GROUP);
-
-            String sk = "MEMBER#" + userId;
-
-            // Lưu ý: DynamoDB PUT = UPSERT
-            RoomMember member = RoomMember.builder()
-                    .pk(pk)
-                    .sk(sk)
-
-                    // chỉ set role theo init logic (có thể overwrite khi upsert)
-                    .role(isAdmin ? "ADMIN" : "MEMBER")
-
-                    .status(InboxStatus.ACTIVE)
-
-                    .roomName(roomName)
-
-                    .lastActivityAt(now)
-
-                    // createdAt: nếu bạn muốn chuẩn hơn thì chỉ set khi insert (optional)
-                    .createdAt(now)
-
-                    .updatedAt(now)
-
-                    .statusTime("STATUS#ACTIVE#TIME#" + now)
-                    .build();
-
-            txBuilder.addPutItem(roomMemberTable, member);
-        }
-
-        // =========================
-        // 3. EXECUTE TRANSACTION
-        // =========================
-        try {
-            enhancedClient.transactWriteItems(txBuilder.build());
-        } catch (Exception e) {
-            throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
-        }
-    }
     @Override
     public Room getRoomById(String roomId, boolean skipException) {
         Key key = Key.builder()

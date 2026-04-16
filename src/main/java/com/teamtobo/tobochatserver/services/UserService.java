@@ -8,11 +8,11 @@ import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 
 public interface UserService {
+    User getUserById(String userId);
     UserResponse getUserProfile(String userId);
     User updateUserProfile(String userId, UserUpdateRequest request);
     void sendFriendRequest(String userId, String otherId);
     void cancelFriendRequest(String userId, String otherId);
-    void responseFriendRequest(String userId, FriendAcceptRequest request);
     PageResponse<UserResponse> findByEmail(String userId, String email, String cursor, int limit);
     PageResponse<FriendResponse> getFriends(
             String userId,

@@ -12,6 +12,8 @@ import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.ChatDomainService;
+import com.teamtobo.tobochatserver.services.RoomDomainService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.CognitoHelper;
@@ -46,9 +48,7 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<User> userTable;
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
-    private final DynamoDbEnhancedClient enhancedClient;
     private final CognitoIdentityProviderClient cognitoClient;
-    private final RoomService roomService;
 
     private final S3Helper s3Helper;
     private final CognitoHelper cognitoHelper;
@@ -59,7 +59,9 @@ public class UserServiceImpl implements UserService {
 
     @Value("${aws.cognito.appClientId}")
     private String appClientId;
-    private User getUserById(String userId) {
+
+    @Override
+    public User getUserById(String userId) {
         // Query DynamoDB bằng PK (USER#id) và SK (PROFILE)
         User user = userTable.getItem(Key.builder()
                 .partitionValue("USER#" + userId)
@@ -71,15 +73,6 @@ public class UserServiceImpl implements UserService {
         }
         return user;
     }
-
-//    private boolean getFriendStatus(String userId, String otherId) {
-//        Friend friend = friendTable.getItem(Key.builder()
-//                .partitionValue("USER#" + userId)
-//                .sortValue("FRIEND#" + otherId)
-//                .build());
-//
-//        return friend != null;
-//    }
 
     @Override
     public UserResponse getUserProfile(String userId) {
@@ -183,62 +176,6 @@ public class UserServiceImpl implements UserService {
         }
 
         friendRequestTable.deleteItem(requestKey);
-    }
-
-    @Override
-    public void responseFriendRequest(String userId, FriendAcceptRequest request) {
-        // Định nghĩa các khóa để xác định Request cũ
-        Key requestKey = Key.builder()
-                .partitionValue("USER#" + request.getFromUser())
-                .sortValue("REQUEST#" + userId)
-                .build();
-
-        // Kiểm tra request có tồn tại không
-        FriendRequest existingRequest = friendRequestTable.getItem(requestKey);
-        if (existingRequest == null) {
-            throw new AppException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
-        }
-
-        if (!request.isAccepted()) {
-            // Xóa yêu cầu nếu từ chối
-            friendRequestTable.deleteItem(requestKey);
-            return;
-        }
-
-        User currentUser = getUserById(userId);
-        User senderUser = getUserById(request.getFromUser());
-
-        String now = Instant.now().toString();
-
-        enhancedClient.transactWriteItems(b -> b
-                // Xóa bản ghi Request
-                .addDeleteItem(friendTable, requestKey)
-
-                // Thêm bạn cho User hiện tại (userId)
-                .addPutItem(friendTable, Friend.builder()
-                        .pk("USER#" + userId)
-                        .sk("FRIEND#" + request.getFromUser())
-                        .name(senderUser.getName())
-                        .avatarUrl(senderUser.getAvatarUrl())
-                        .addedAt(now)
-                        .build())
-
-                // Thêm bạn cho người gửi (fromUser)
-                .addPutItem(friendTable, Friend.builder()
-                        .pk("USER#" + request.getFromUser())
-                        .sk("FRIEND#" + userId)
-                        .name(currentUser.getName())
-                        .avatarUrl(currentUser.getAvatarUrl())
-                        .addedAt(now)
-                        .build())
-        );
-
-        roomService.createRoom(
-                RoomCreateRequest.builder()
-                        .memberIds(List.of(userId, request.getFromUser()))
-                        .build(),
-                RoomType.DM
-        );
     }
 
     @Override

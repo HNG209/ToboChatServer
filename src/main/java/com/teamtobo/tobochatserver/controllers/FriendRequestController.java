@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.services.UserDomainService;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class FriendRequestController {
     private final UserService userService;
+    private final UserDomainService userDomainService;
 
     @Operation(summary = "Gửi lời mời kết bạn")
     @PostMapping("/{otherId}")
@@ -53,7 +55,7 @@ public class FriendRequestController {
             @PathVariable String otherId) {
         String userId = jwt.getSubject(); // receiver
 
-        userService.responseFriendRequest(userId, FriendAcceptRequest.builder()
+        userDomainService.responseFriendRequest(userId, FriendAcceptRequest.builder()
                 .accepted(accepted)
                 .fromUser(otherId)
                 .build());

@@ -1,15 +1,16 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
-import com.teamtobo.tobochatserver.services.ChatRoomMemberService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
-import com.teamtobo.tobochatserver.services.RoomService;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.services.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +20,19 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/rooms")
 @RequiredArgsConstructor
 public class RoomController {
-    private final ChatRoomMemberService chatRoomMemberService;
     private final RoomMemberService roomMemberService;
-    private final RoomService roomService;
+    private final RoomDomainService roomDomainService;
+
+    @Operation(summary = "Tạo nhóm chat")
+    @PostMapping
+    public ResponseEntity<Void> createGroup(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody RoomCreateRequest request) {
+        String userId = jwt.getSubject();
+
+        roomDomainService.createRoom(userId, request, RoomType.GROUP);
+        return ResponseEntity.noContent().build();
+    }
 
     @Operation(summary = "Danh sách phòng đã tham gia")
     @GetMapping

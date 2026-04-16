@@ -2,6 +2,8 @@ package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberRole;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -18,10 +20,11 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RoomMember extends BaseEntity {
-    String role;
+    MemberRole role;
     String roomName;
     String lastActivityAt;
     InboxStatus status;
+    RoomType roomType;
 
     // GSI_ChatInbox
     String statusTime;

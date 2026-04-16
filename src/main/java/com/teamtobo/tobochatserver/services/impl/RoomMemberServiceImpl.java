@@ -372,5 +372,15 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             roomMemberTable.updateItem(member);
         }
     }
+
+    @Override
+    public RoomMember getMemberById(String memberId, String roomId) {
+        Key key = Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("MEMBER#" + memberId)
+                .build();
+
+        return roomMemberTable.getItem(key);
+    }
 }
 

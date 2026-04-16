@@ -23,6 +23,11 @@ public class Room extends BaseEntity { // Room metadata
     String avatarUrl;
     RoomType roomType;
 
+    boolean allowAddMember = true; // Cho phép thêm thành viên vào nhóm
+    boolean allowSendMessage = true; // Cho phép gửi tin nhắn
+    boolean allowUpdateMetadata = true; // Cho phép sửa thông tin phòng chat
+    boolean approveMember; // Phê duyệt khi vào phòng
+
     @Override
     @DynamoDbPartitionKey
     public String getPk() {
