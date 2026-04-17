@@ -44,7 +44,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         // Kiểm tra các user có tồn tại
         uniqueMembers.forEach(userService::getUserProfile);
 
-        String now = Instant.now().toString(); // Dùng chuẩn ISO 8601 cho thời gian
+        String now = Instant.now().toString();
 
         switch (roomType) {
             case DM -> {
@@ -183,14 +183,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             User targetUser = userService.getUserById(targetUserId);
 
-            // === TRUYỀN THÊM targetUserId vào ===
             handleAddMember(room, inviter, targetUser, targetUserId);
         }
     }
 
-    // =========================
-// CORE LOGIC (ĐÃ SỬA - DÙNG targetUserId trực tiếp)
-// =========================
     private void handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
 
         String roomId = room.getPk().replace("ROOM#", "");
