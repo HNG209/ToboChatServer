@@ -1,5 +1,7 @@
-package com.teamtobo.tobochatserver.annotations;
+package com.teamtobo.tobochatserver.aspects;
 
+import com.teamtobo.tobochatserver.annotations.RequirePermission;
+import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
@@ -27,7 +29,7 @@ import static com.teamtobo.tobochatserver.RolePermission.hasPermission;
 public class PermissionAspect {
     private final RoomMemberService roomMemberService;
 
-    @Around("@annotation(RequireRoomMember)")
+    @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireRoomMember)")
     public Object checkMember(ProceedingJoinPoint joinPoint) throws Throwable {
 
         String userId = getCurrentUserId();
