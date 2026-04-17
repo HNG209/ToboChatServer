@@ -62,12 +62,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.ROOM_NOT_REQUIRE_APPROVAL);
         }
 
-        //check admin
-        RoomMember admin = getMember(roomId, adminId);
-        if (admin.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
         String pk = "ROOM#" + roomId;
         String sk = "PENDING#" + targetUserId;
 
@@ -152,11 +146,13 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         Room room = roomService.getRoomById(roomId, true);
 
-        if (room.getRoomType() != RoomType.GROUP) {
+        if (room.getRoomType() != RoomType.GROUP)
             throw new AppException(ErrorCode.ROOM_INVALID);
-        }
 
         RoomMember inviter = getMember(roomId, inviterId);
+
+        if(inviter.getRole() != MemberRole.ADMIN && !room.isAllowAddMember())
+            throw new AppException(ErrorCode.ADD_MEMBER_NOT_ALLOWED);
 
         for (String targetUserId : targetUserIds) {
 
@@ -472,6 +468,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .sk("MEMBER#" + userId)
                 .role(MemberRole.MEMBER)
                 .status(InboxStatus.ACTIVE)
+                .roomType(RoomType.GROUP)
                 .roomName(roomName)
                 .lastActivityAt(now)
                 .createdAt(now)

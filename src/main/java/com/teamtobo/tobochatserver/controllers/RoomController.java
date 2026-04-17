@@ -1,5 +1,7 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.annotations.RequirePermission;
+import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.dtos.request.AddMemberRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
@@ -7,6 +9,7 @@ import com.teamtobo.tobochatserver.dtos.response.GroupPendingRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.*;
 import io.swagger.v3.oas.annotations.Operation;
@@ -81,9 +84,10 @@ public class RoomController {
 
     @Operation(summary = "Thêm thành viên vào nhóm chat")
     @PostMapping("/{roomId}/members")
+    @RequirePermission(MemberPermission.ADD_MEMBER)
     public ResponseEntity<Void> addMembers(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @RequestBody AddMemberRequest request) {
 
         String inviterId = jwt.getSubject();
@@ -108,9 +112,10 @@ public class RoomController {
 
     @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
     @PostMapping("/{roomId}/approve/{userId}")
+    @RequirePermission(MemberPermission.APPROVE_MEMBER)
     public ResponseEntity<Void> approve(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @PathVariable String userId,
             @Parameter(
                     description = "Chấp nhận hay từ chối",
