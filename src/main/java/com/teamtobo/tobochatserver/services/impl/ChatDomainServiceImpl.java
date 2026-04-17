@@ -33,11 +33,11 @@ import java.util.stream.Collectors;
 // Các class khác không được dùng class này, tránh lỗi circular dependencies
 public class ChatDomainServiceImpl implements ChatDomainService {
     private final DynamoDbTable<Message> messageTable;
-    private final DynamoDbTable<Room> roomTable;
     private final SocketIOServer socketIOServer;
     private final RoomService roomService;
     private final UserService userService;
     private final RoomMemberService roomMemberService;
+    private final RoomDomainService roomDomainService;
     private final ChatService chatService;
     private final S3Client s3Client;
 
@@ -55,31 +55,30 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             String sk = "MSG#" + now + "#" + messageId;
             String part = now + "#" + messageId;
 
-            // 1. Lấy danh sách thành viên hiện có
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
-
-            // Nếu phòng chưa tồn tại (DM tự động tạo)
-            if ((memberIds == null || memberIds.isEmpty()) && roomId.contains("_")) {
+            // đảm bảo room tồn tại
+            if (roomId.contains("_")) {
                 String[] parts = roomId.split("_");
-                if (parts.length == 2) {
-                    memberIds = List.of(parts[0], parts[1]);
-                    if (parts[0].equals(parts[1]))
-                        throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
+
+                if (parts.length != 2) {
+                    throw new AppException(ErrorCode.ROOM_INVALID);
                 }
 
-                if (memberIds == null || memberIds.isEmpty()) {
-                    throw new AppException(ErrorCode.ROOM_NOT_FOUND);
+                String otherId;
+
+                if (senderId.equals(parts[0])) {
+                    otherId = parts[1];
+                } else if (senderId.equals(parts[1])) {
+                    otherId = parts[0];
+                } else {
+                    // sender không nằm trong room → invalid
+                    throw new AppException(ErrorCode.NOT_IN_ROOM);
                 }
 
-                Room roomMetadata = Room.builder()
-                        .pk(pk)
-                        .roomType(RoomType.DM)
-                        .createdAt(now)
-                        .updatedAt(now)
-                        .build();
-
-                roomTable.putItem(roomMetadata);
+                roomId = roomDomainService.getOrCreateDMRoom(senderId, otherId);
             }
+
+            // sau đó lấy member lại
+            List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
             // --- 2. XỬ LÝ ATTACHMENTS (PHẦN BỔ SUNG QUAN TRỌNG) ---
             List<Attachment> finalAttachments = new ArrayList<>();
