@@ -33,7 +33,24 @@ public class PermissionAspect {
     public Object checkMember(ProceedingJoinPoint joinPoint) throws Throwable {
 
         String userId = getCurrentUserId();
-        String roomId = extractRoomId(joinPoint);
+        String roomId = extractRoomId(joinPoint); // group id: uuid, DM id: id1_id2
+
+        // nếu định dạng là DM id thì proceed tiếp
+        if (roomId.contains("_")) {
+            String[] parts = roomId.split("_");
+
+            if (parts.length != 2) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+
+            // user phải là 1 trong 2 người
+            if (!userId.equals(parts[0]) && !userId.equals(parts[1])) {
+                throw new AppException(ErrorCode.NOT_IN_ROOM);
+            }
+
+            // hợp lệ → cho đi tiếp luôn (KHÔNG cần query DB)
+            return joinPoint.proceed();
+        }
 
         RoomMember member = roomMemberService.getMemberById(userId, roomId);
 

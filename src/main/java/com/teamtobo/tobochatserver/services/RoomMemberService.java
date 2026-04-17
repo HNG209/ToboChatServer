@@ -7,7 +7,6 @@ import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 
 public interface RoomMemberService {
     void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now);
-    void updateMemberInbox(String roomId, String memberId, String now);
     RoomMember getMemberById(String memberId, String roomId);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status);
     RoomResponse getRoomMetadata(String userId, String roomId);

@@ -350,28 +350,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             roomMemberTable.putItem(newMember);
         }
     }
-  
-    @Override
-    public void updateMemberInbox(String roomId, String memberId, String now) {
-        Key key = Key.builder()
-                .partitionValue("ROOM#" + roomId)
-                .sortValue("MEMBER#" + memberId)
-                .build();
-
-        RoomMember member = roomMemberTable.getItem(key);
-
-        if (member != null) {
-            member.setUpdatedAt(now);
-//            member.setLastMessagePreview(lastMessagePreview);
-
-            // tính toán lại để GSI tự động sắp xếp
-            if (member.getStatus() != null) {
-                member.setStatusTime("STATUS#" + member.getStatus() + "#TIME#" + now);
-            }
-
-            roomMemberTable.updateItem(member);
-        }
-    }
 
     @Override
     public RoomMember getMemberById(String memberId, String roomId) {
