@@ -1,7 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -18,15 +17,16 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
 @NoArgsConstructor
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class Room extends BaseEntity { // Room metadata
-    String roomName;
-    String avatarUrl;
-    RoomType roomType;
+public class GroupAcceptRequest extends BaseEntity {
 
-    boolean allowAddMember = true; // Cho phép thêm thành viên vào nhóm
-    boolean allowSendMessage = true; // Cho phép gửi tin nhắn
-    boolean allowUpdateMetadata = true; // Cho phép sửa thông tin phòng chat
-    boolean approveMember; // Phê duyệt khi vào phòng
+    String roomId;
+    String inviterId;
+    String roomName;
+
+    @Override
+    public EntityType getEntityType() {
+        return EntityType.GROUP_ACCEPT_REQUEST;
+    }
 
     @Override
     @DynamoDbPartitionKey
@@ -37,11 +37,13 @@ public class Room extends BaseEntity { // Room metadata
     @Override
     @DynamoDbSortKey
     public String getSk() {
-        return "METADATA";
-    }
-
-    @Override
-    public EntityType getEntityType() {
-        return EntityType.ROOM;
+        return super.getSk();
     }
 }
+
+
+
+
+
+
+

@@ -40,6 +40,11 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+            <version>3.2.5</version>
+        </dependency>
 <!--        AWS DynamoDB-->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

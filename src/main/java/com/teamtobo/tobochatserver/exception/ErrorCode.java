@@ -69,11 +69,24 @@ public enum ErrorCode {
     PERMISSION_IN_USE(40021, "[40021]Cannot delete Permission because it is currently assigned to a Role", HttpStatus.BAD_REQUEST),
 
     ROOM_INVALID(411111, "[411111] Room invalid", HttpStatus.BAD_REQUEST),
-    ROOM_CREATE_ERROR(422222, "[422222] Room create error", HttpStatus.INTERNAL_SERVER_ERROR),
+    GROUP_SIZE_INVALID(422222, "[42222] Invalid group size", HttpStatus.BAD_REQUEST),
+    ROOM_CREATE_ERROR(433333, "[43333] Room create error", HttpStatus.INTERNAL_SERVER_ERROR),
+    ROOM_NAME_REQUIRED(444444, "[44444] Room name required", HttpStatus.BAD_REQUEST),
 
     INVALID_AVATAR_URL(6001, "[6001] Invalid avatar url", HttpStatus.BAD_REQUEST),
     ROOM_NOT_FOUND(40031, "[40031] Room not found", HttpStatus.NOT_FOUND),
-    MESSAGE_NOT_FOUND(40041, "[40041] Message not found", HttpStatus.NOT_FOUND)
+    MESSAGE_NOT_FOUND(40041, "[40041] Message not found", HttpStatus.NOT_FOUND),
+    NOT_IN_ROOM(50501, "[50501] Not in room", HttpStatus.BAD_REQUEST),
+    INVALID_PERMISSION(666, "[666] Invalid permission", HttpStatus.BAD_REQUEST),
+    ONLY_FRIEND_CAN_ADD(6767, "[6767] Only friends can add to group", HttpStatus.BAD_REQUEST),
+    REQUEST_NOT_FOUND(50001, "[50001] Request not found", HttpStatus.NOT_FOUND),
+    GROUP_INVITE_HANDLE_FAILED(50002, "[50002] Handle group invite failed", HttpStatus.INTERNAL_SERVER_ERROR),
+    PENDING_REQUEST_NOT_FOUND(50003, "[50003] Pending request not found", HttpStatus.NOT_FOUND),
+    ROOM_NOT_REQUIRE_APPROVAL(50004, "[50004] Room does not require approval", HttpStatus.BAD_REQUEST),
+    GROUP_NOT_REQUIRE_APPROVAL(50005, "[50005] Group does not require approval", HttpStatus.BAD_REQUEST),
+    PENDING_NOT_FOUND(50006, "[50006] Pending request not found", HttpStatus.NOT_FOUND),
+    CANNOT_DISABLE_APPROVAL_WHEN_PENDING(50007,"[50007] Cannot disable approval when pending requests exist", HttpStatus.BAD_REQUEST),
+
     ;
 
 

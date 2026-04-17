@@ -55,4 +55,15 @@ public class DynamoDbConfig {
                 .dynamoDbClient(dynamoDbClient)
                 .build();
     }
+
+    //Hào
+    @Bean
+    public DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(GroupAcceptRequest.class));
+    }
+
+    @Bean
+    public DynamoDbTable<GroupPendingRequest> groupPendingRequestTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(GroupPendingRequest.class));
+    }
 }

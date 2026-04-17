@@ -9,7 +9,7 @@ import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import java.util.List;
 
 public interface RoomService {
-    void createRoom(RoomCreateRequest request, RoomType roomType);
+//    void createRoom(String userId, RoomCreateRequest request, RoomType roomType);
     List<String> getMembersByRoomId(String roomId);
     Room getRoomById(String roomId, boolean skipException);
 }

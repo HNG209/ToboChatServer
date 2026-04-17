@@ -1,10 +1,7 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
@@ -20,6 +17,8 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     String email;
     String dob;
     String avatarUrl;
+    @Builder.Default
+    boolean allowAutoAddToGroup = true;
 
     String searchPk;
     String searchSk;

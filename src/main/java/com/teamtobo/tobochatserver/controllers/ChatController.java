@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
 import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
 import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;

@@ -1,10 +1,12 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
+import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -15,14 +17,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
