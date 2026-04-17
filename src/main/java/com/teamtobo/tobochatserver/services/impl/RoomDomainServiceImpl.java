@@ -14,6 +14,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 
 import java.time.Instant;
@@ -31,8 +32,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final RoomService roomService;
 
     private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
+    private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
     @Override
-    public void createRoom(String userId, RoomCreateRequest request, RoomType roomType) {
+            public void createRoom(String userId, RoomCreateRequest request, RoomType roomType) {
         List<String> memberIds = new ArrayList<>(request.getMemberIds());
         memberIds.add(userId);
         // Loại bỏ các ID trùng lặp
@@ -76,84 +78,35 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                     throw new AppException(ErrorCode.ROOM_NAME_REQUIRED);
                 }
 
-                // 2. Chuẩn bị list
-                List<String> acceptedMembers = new ArrayList<>();
-                List<String> pendingMembers = new ArrayList<>();
+                String roomId = UUID.randomUUID().toString();
 
-                // 3. Filter
+                saveRoomToDynamoDB(
+                        userId,
+                        roomId,
+                        request.getRoomName(),
+                        roomType,
+                        List.of(userId),
+                        now
+                );
+
+                Room room = roomService.getRoomById(roomId, true);
+                RoomMember creator = getMember(roomId, userId);
+
                 for (String memberId : uniqueMembers) {
-
-                    // luôn giữ người tạo
-                    if (memberId.equals(userId)) {
-                        acceptedMembers.add(memberId);
-                        continue;
-                    }
+                    if (memberId.equals(userId)) continue;
 
                     // check friend
                     if (userService.getFriendStatus(userId, memberId) != FriendStatus.FRIEND) {
                         throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
                     }
 
-                    // check setting
-                    User user = userService.getUserById(memberId);
+                    User targetUser = userService.getUserById(memberId);
 
-                    if (user.isAllowAutoAddToGroup()) {
-                        acceptedMembers.add(memberId);
-                    } else {
-                        pendingMembers.add(memberId);
-                    }
-                }
+                    if (isMember(roomId, memberId)) continue;
 
-                // 4. Validate lại sau filter
-//                if (acceptedMembers.size() < 3) {
-//                    throw new AppException(ErrorCode.GROUP_SIZE_INVALID);
-//                }
-
-                // 5. Tạo roomId
-                String roomId = UUID.randomUUID().toString();
-
-                // 6. Lưu room (chỉ acceptedMembers)
-                saveRoomToDynamoDB(
-                        userId,
-                        roomId,
-                        request.getRoomName(),
-                        roomType,
-                        acceptedMembers,
-                        now
-                );
-
-                // 7. Tạo request cho pending
-                for (String pendingUserId : pendingMembers) {
-                    GroupAcceptRequest req = GroupAcceptRequest.builder()
-                            .pk("USER#" + pendingUserId)
-                            .sk("ROOM_ACCEPT#" + roomId)
-                            .roomId(roomId)
-                            .inviterId(userId)
-                            .roomName(request.getRoomName())
-                            .build();
-
-                    try {
-                        groupAcceptRequestTable.putItem(req);
-                    } catch (Exception e) {
-                        throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
-                    }
+                    handleAddMember(room, creator, targetUser, memberId);
                 }
             }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         }
     }
     private void saveRoomToDynamoDB(
@@ -183,7 +136,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         txBuilder.addPutItem(roomTable, roomMetadata);
 
         for (String memberId : memberIds) {
-            // Người tạo nhóm là Admin
             boolean isAdmin = (Objects.equals(memberId, userId) && type == RoomType.GROUP);
 
             String sk = "MEMBER#" + memberId;
@@ -199,6 +151,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                     .createdAt(now)
                     .updatedAt(now)
                     .statusTime("STATUS#ACTIVE#TIME#" + now)
+                    .addedBy(type == RoomType.GROUP ? userId : null)
                     .build();
 
             txBuilder.addPutItem(roomMemberTable, member);
@@ -209,5 +162,130 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
+    }
+
+    @Override
+    public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
+
+        Room room = roomService.getRoomById(roomId, true);
+
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+
+        RoomMember inviter = getMember(roomId, inviterId);
+
+        for (String targetUserId : targetUserIds) {
+
+            if (isMember(roomId, targetUserId)) continue;
+
+            validateFriend(inviterId, targetUserId);
+
+            User targetUser = userService.getUserById(targetUserId);
+
+            // === TRUYỀN THÊM targetUserId vào ===
+            handleAddMember(room, inviter, targetUser, targetUserId);
+        }
+    }
+
+    // =========================
+// CORE LOGIC (ĐÃ SỬA - DÙNG targetUserId trực tiếp)
+// =========================
+    private void handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
+
+        String roomId = room.getPk().replace("ROOM#", "");
+        String inviterId = inviter.getMemberId();
+        String roomName = room.getRoomName();
+
+        //IF1: Nhóm có xét duyệt không?
+        if (room.isApproveMember()) {
+
+            //IF2: Inviter có phải Admin không?
+            if (inviter.getRole() != MemberRole.ADMIN) {
+                // Thành viên thường thêm người thì phải chờ duyệt (Pending)
+                createGroupPendingRequest(roomId, inviterId, targetUserId, roomName);
+                return;
+            }
+            //Nếu là Admin thì tiếp tục xử lý bình thường
+        }
+
+
+        //IF3: B có cho phép tự động thêm vào group?
+        if (targetUser.isAllowAutoAddToGroup()) {
+            addMember(roomId, targetUserId, roomName);
+        } else {
+            createGroupAcceptRequest(roomId, inviterId, targetUserId, roomName);
+        }
+    }
+    private RoomMember getMember(String roomId, String userId) {
+        RoomMember member = roomMemberTable.getItem(
+                Key.builder()
+                        .partitionValue("ROOM#" + roomId)
+                        .sortValue("MEMBER#" + userId)
+                        .build()
+        );
+
+        if (member == null) {
+            throw new AppException(ErrorCode.NOT_IN_ROOM);
+        }
+        return member;
+    }
+
+    private boolean isMember(String roomId, String userId) {
+        return roomMemberTable.getItem(
+                Key.builder()
+                        .partitionValue("ROOM#" + roomId)
+                        .sortValue("MEMBER#" + userId)
+                        .build()
+        ) != null;
+    }
+
+    private void validateFriend(String inviterId, String targetUserId) {
+        if (userService.getFriendStatus(inviterId, targetUserId) != FriendStatus.FRIEND) {
+            throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
+        }
+    }
+
+    private void addMember(String roomId, String userId, String roomName) {
+        String now = Instant.now().toString();
+
+        RoomMember member = RoomMember.builder()
+                .pk("ROOM#" + roomId)
+                .sk("MEMBER#" + userId)
+                .role(MemberRole.MEMBER)
+                .status(InboxStatus.ACTIVE)
+                .roomName(roomName)
+                .lastActivityAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .statusTime("STATUS#ACTIVE#TIME#" + now)
+                .build();
+
+        roomMemberTable.putItem(member);
+    }
+
+    private void createGroupAcceptRequest(String roomId, String inviterId, String targetUserId, String roomName) {
+        groupAcceptRequestTable.putItem(
+                GroupAcceptRequest.builder()
+                        .pk("USER#" + targetUserId)
+                        .sk("ROOM_ACCEPT#" + roomId)
+                        .roomId(roomId)
+                        .inviterId(inviterId)
+                        .roomName(roomName)
+                        .build()
+        );
+    }
+
+    private void createGroupPendingRequest(String roomId, String inviterId, String targetUserId, String roomName) {
+        groupPendingRequestTable.putItem(
+                GroupPendingRequest.builder()
+                        .pk("ROOM#" + roomId)
+                        .sk("PENDING#" + targetUserId)
+                        .roomId(roomId)
+                        .userId(targetUserId)
+                        .requesterId(inviterId)
+                        .roomName(roomName)
+                        .build()
+        );
     }
 }

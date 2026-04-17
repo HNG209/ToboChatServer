@@ -78,7 +78,9 @@ public enum ErrorCode {
     MESSAGE_NOT_FOUND(40041, "[40041] Message not found", HttpStatus.NOT_FOUND),
     NOT_IN_ROOM(50501, "[50501] Not in room", HttpStatus.BAD_REQUEST),
     INVALID_PERMISSION(666, "[666] Invalid permission", HttpStatus.BAD_REQUEST),
-    ONLY_FRIEND_CAN_ADD(6767, "[6767] Only friends can add to group", HttpStatus.BAD_REQUEST)
+    ONLY_FRIEND_CAN_ADD(6767, "[6767] Only friends can add to group", HttpStatus.BAD_REQUEST),
+    REQUEST_NOT_FOUND(50001, "[50001] Request not found", HttpStatus.NOT_FOUND),
+    GROUP_INVITE_HANDLE_FAILED(50002, "[50002] Handle group invite failed", HttpStatus.INTERNAL_SERVER_ERROR),
     ;
 
 

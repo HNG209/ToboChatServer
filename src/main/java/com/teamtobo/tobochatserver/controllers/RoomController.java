@@ -1,7 +1,9 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.AddMemberRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.GroupPendingRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class RoomController {
     private final RoomMemberService roomMemberService;
     private final RoomDomainService roomDomainService;
+    private final GroupPendingRequestService groupPendingRequestService;
 
     @Operation(summary = "Tạo nhóm chat")
     @PostMapping
@@ -71,6 +74,30 @@ public class RoomController {
         roomMemberService.markAsReadedMessage(userId, roomId);
         return ApiResponse.<Void>builder()
                 .message("Đã đánh dấu phòng là đã đọc")
+                .build();
+    }
+
+    @Operation(summary = "Thêm thành viên vào nhóm chat")
+    @PostMapping("/{roomId}/members")
+    public ResponseEntity<Void> addMembers(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @RequestBody AddMemberRequest request) {
+
+        String inviterId = jwt.getSubject();
+        roomDomainService.addMemberToGroup(roomId, inviterId, request.getTargetUserIds());
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Lấy danh sách pending request của nhóm")
+    @GetMapping("/{roomId}/pending")
+    public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPending(
+            @PathVariable String roomId,
+            @RequestParam(defaultValue = "10") int limit) {
+
+        return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
+                .result(groupPendingRequestService.getPending(roomId, limit))
                 .build();
     }
 }

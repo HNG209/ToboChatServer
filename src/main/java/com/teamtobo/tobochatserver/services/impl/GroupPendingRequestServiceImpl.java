@@ -1,0 +1,52 @@
+package com.teamtobo.tobochatserver.services.impl;
+
+import com.teamtobo.tobochatserver.dtos.response.GroupPendingRequestResponse;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.entities.GroupPendingRequest;
+import com.teamtobo.tobochatserver.services.GroupPendingRequestService;
+import com.teamtobo.tobochatserver.services.RoomService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class GroupPendingRequestServiceImpl implements GroupPendingRequestService {
+
+    private final DynamoDbEnhancedClient enhancedClient;
+    private final DynamoDbTable<GroupPendingRequest> pendingTable;
+    private final RoomService roomService;
+
+    @Override
+    public PageResponse<GroupPendingRequestResponse> getPending(String roomId, int limit) {
+
+        String pk = "ROOM#" + roomId;
+
+        QueryEnhancedRequest query = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder().partitionValue(pk).build()))
+                .limit(limit)
+                .build();
+
+        List<GroupPendingRequestResponse> items = pendingTable.query(query)
+                .items()
+                .stream()
+                .map(item -> GroupPendingRequestResponse.builder()
+                        .userId(item.getUserId())
+                        .requesterId(item.getRequesterId())
+                        .roomId(item.getRoomId())
+                        .roomName(item.getRoomName())
+                        .build())
+                .toList();
+
+        return PageResponse.<GroupPendingRequestResponse>builder()
+                .items(items)
+                .nextCursor(null)
+                .build();
+    }
+}

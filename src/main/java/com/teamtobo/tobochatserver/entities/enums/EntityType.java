@@ -8,4 +8,5 @@ public enum EntityType {
     ROOM_MEMBER,
     USER,
     GROUP_ACCEPT_REQUEST,
+    GROUP_PENDING_REQUEST,
 }

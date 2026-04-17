@@ -32,6 +32,8 @@ public class RoomMember extends BaseEntity {
     //notification
     int unreadMessages;
 
+    String addedBy; // userId của người thêm vào phòng, có thể null nếu là phòng private 1-1
+
     @Override
     @DynamoDbPartitionKey
     public String getPk() { return super.getPk(); }

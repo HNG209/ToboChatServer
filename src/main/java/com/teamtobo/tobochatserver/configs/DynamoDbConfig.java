@@ -61,4 +61,9 @@ public class DynamoDbConfig {
     public DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable(DynamoDbEnhancedClient enhancedClient) {
         return enhancedClient.table("ToboChatTable", TableSchema.fromBean(GroupAcceptRequest.class));
     }
+
+    @Bean
+    public DynamoDbTable<GroupPendingRequest> groupPendingRequestTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(GroupPendingRequest.class));
+    }
 }
