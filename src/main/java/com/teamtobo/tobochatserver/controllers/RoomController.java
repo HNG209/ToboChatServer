@@ -10,6 +10,8 @@ import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -93,11 +95,42 @@ public class RoomController {
     @Operation(summary = "Lấy danh sách pending request của nhóm")
     @GetMapping("/{roomId}/pending")
     public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPending(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
-            @RequestParam(defaultValue = "10") int limit) {
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+        String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
-                .result(groupPendingRequestService.getPending(roomId, limit))
+                .result(groupPendingRequestService.getPending(roomId, userId, limit))
                 .build();
+    }
+
+    @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
+    @PostMapping("/{roomId}/approve/{userId}")
+    public ResponseEntity<Void> approve(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @PathVariable String userId,
+            @Parameter(
+                    description = "Chấp nhận hay từ chối",
+                    required = true,
+                    schema = @Schema(allowableValues = {"true", "false"})
+            )
+            @RequestParam boolean accept
+    ) {
+        String adminId = jwt.getSubject();
+        roomDomainService.approveMember(roomId, adminId, userId, accept);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Bật/tắt phê duyệt thành viên vào nhóm")
+    @PatchMapping("/{roomId}/approval/toggle")
+    public ResponseEntity<Void> toggleApproveMember(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId
+    ) {
+        roomDomainService.toggleApproveMember(roomId, jwt.getSubject());
+        return ResponseEntity.noContent().build();
     }
 }

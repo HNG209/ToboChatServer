@@ -81,6 +81,12 @@ public enum ErrorCode {
     ONLY_FRIEND_CAN_ADD(6767, "[6767] Only friends can add to group", HttpStatus.BAD_REQUEST),
     REQUEST_NOT_FOUND(50001, "[50001] Request not found", HttpStatus.NOT_FOUND),
     GROUP_INVITE_HANDLE_FAILED(50002, "[50002] Handle group invite failed", HttpStatus.INTERNAL_SERVER_ERROR),
+    PENDING_REQUEST_NOT_FOUND(50003, "[50003] Pending request not found", HttpStatus.NOT_FOUND),
+    ROOM_NOT_REQUIRE_APPROVAL(50004, "[50004] Room does not require approval", HttpStatus.BAD_REQUEST),
+    GROUP_NOT_REQUIRE_APPROVAL(50005, "[50005] Group does not require approval", HttpStatus.BAD_REQUEST),
+    PENDING_NOT_FOUND(50006, "[50006] Pending request not found", HttpStatus.NOT_FOUND),
+    CANNOT_DISABLE_APPROVAL_WHEN_PENDING(50007,"[50007] Cannot disable approval when pending requests exist", HttpStatus.BAD_REQUEST),
+
     ;
 
 

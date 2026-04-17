@@ -42,4 +42,5 @@ public class GroupAcceptRequestController {
         groupAcceptRequestService.respondInvite(jwt.getSubject(), roomId, accepted);
         return ResponseEntity.noContent().build();
     }
+
 }

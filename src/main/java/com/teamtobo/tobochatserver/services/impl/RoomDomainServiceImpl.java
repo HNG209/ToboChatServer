@@ -1,6 +1,5 @@
 package com.teamtobo.tobochatserver.services.impl;
 
-import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
@@ -15,6 +14,8 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 
 import java.time.Instant;
@@ -283,5 +284,104 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .roomName(roomName)
                         .build()
         );
+    }
+
+    @Override
+    public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
+
+        Room room = roomService.getRoomById(roomId, true);
+
+        //phải là group
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+
+        //group có bật duyệt không
+        if (!room.isApproveMember()) {
+            throw new AppException(ErrorCode.ROOM_NOT_REQUIRE_APPROVAL);
+        }
+
+        //check admin
+        RoomMember admin = getMember(roomId, adminId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        String pk = "ROOM#" + roomId;
+        String sk = "PENDING#" + targetUserId;
+
+        GroupPendingRequest pending = groupPendingRequestTable.getItem(
+                Key.builder().partitionValue(pk).sortValue(sk).build()
+        );
+
+        if (pending == null) {
+            throw new AppException(ErrorCode.PENDING_REQUEST_NOT_FOUND);
+        }
+
+        //xoá pending trước
+        groupPendingRequestTable.deleteItem(
+                Key.builder().partitionValue(pk).sortValue(sk).build()
+        );
+
+        //reject
+        if (!accept) return;
+
+        //tránh add trùng
+        if (isMember(roomId, targetUserId)) return;
+
+        User targetUser = userService.getUserById(targetUserId);
+
+        //tránh tạo accept request trùng
+        GroupAcceptRequest existed = groupAcceptRequestTable.getItem(
+                Key.builder()
+                        .partitionValue("USER#" + targetUserId)
+                        .sortValue("ROOM_ACCEPT#" + roomId)
+                        .build()
+        );
+
+        if (existed != null) return;
+
+        if (targetUser.isAllowAutoAddToGroup()) {
+            addMember(roomId, targetUserId, room.getRoomName());
+        } else {
+            createGroupAcceptRequest(roomId, adminId, targetUserId, room.getRoomName());
+        }
+    }
+
+    @Override
+    public void toggleApproveMember(String roomId, String userId) {
+
+        Room room = roomService.getRoomById(roomId, true);
+
+        RoomMember member = getMember(roomId, userId);
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        boolean newValue = !room.isApproveMember();
+
+        // nếu đang bật mà muốn tắt thì check pending
+        if (room.isApproveMember() && !newValue) {
+            boolean hasPending = groupPendingRequestTable.query(
+                    QueryEnhancedRequest.builder()
+                            .queryConditional(
+                                    QueryConditional.sortBeginsWith(
+                                            Key.builder()
+                                                    .partitionValue("ROOM#" + roomId)
+                                                    .sortValue("PENDING#")
+                                                    .build()
+                                    )
+                            )
+                            .limit(1)
+                            .build()
+            ).items().stream().findAny().isPresent();
+
+            if (hasPending) {
+                throw new AppException(ErrorCode.CANNOT_DISABLE_APPROVAL_WHEN_PENDING);
+            }
+        }
+
+        room.setApproveMember(newValue);
+        roomTable.putItem(room);
     }
 }
