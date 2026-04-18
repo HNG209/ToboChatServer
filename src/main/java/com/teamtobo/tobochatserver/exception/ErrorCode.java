@@ -77,7 +77,7 @@ public enum ErrorCode {
     INVALID_AVATAR_URL(6001, "[6001] Invalid avatar url", HttpStatus.BAD_REQUEST),
     ROOM_NOT_FOUND(40031, "[40031] Room not found", HttpStatus.NOT_FOUND),
     MESSAGE_NOT_FOUND(40041, "[40041] Message not found", HttpStatus.NOT_FOUND),
-    NOT_IN_ROOM(50501, "[50501] Not in room", HttpStatus.BAD_REQUEST),
+    NOT_IN_ROOM(50501, "[50501] Not in room", HttpStatus.FORBIDDEN),
     INVALID_PERMISSION(666, "[666] Invalid permission", HttpStatus.BAD_REQUEST),
     ADD_MEMBER_NOT_ALLOWED(7777, "[7777] Add member not allowed", HttpStatus.FORBIDDEN),
     SEND_MESSAGE_NOT_ALLOWED(8888, "[8888] Send message not allowed", HttpStatus.FORBIDDEN),

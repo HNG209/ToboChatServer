@@ -1,11 +1,10 @@
 package com.teamtobo.tobochatserver.controllers;
 
-import com.teamtobo.tobochatserver.annotations.RequireAddToGroupEnabled;
-import com.teamtobo.tobochatserver.annotations.RequireGroup;
-import com.teamtobo.tobochatserver.annotations.RequirePermission;
-import com.teamtobo.tobochatserver.annotations.RoomId;
+import com.teamtobo.tobochatserver.annotations.*;
 import com.teamtobo.tobochatserver.dtos.request.AddMemberRequest;
+import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.GroupPendingRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
@@ -44,6 +43,17 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/{roomId}")
+    @RequireAdmin
+    public ResponseEntity<Void> updateRoomSettings(
+            @RoomId @PathVariable String roomId,
+            @RequestBody RoomUpdateRequest request
+            ) {
+
+        roomDomainService.updateRoomSettings(roomId, request);
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Danh sách phòng đã tham gia")
     @GetMapping
     public ApiResponse<PageResponse<RoomResponse>> getJoinedRooms(
@@ -72,6 +82,7 @@ public class RoomController {
                 .build();
     }
 
+    // TODO: Hàm của hệ thống, hệ thống làm tự động
     @Operation(summary = "Đánh dấu một phòng là đã đọc")
     @PatchMapping("/{roomId}/read")
     public ApiResponse<Void> markAsRead (
@@ -100,8 +111,9 @@ public class RoomController {
     }
 
     @Operation(summary = "Lấy danh sách pending request của nhóm")
-    @GetMapping("/{roomId}/pending")
-    public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPending(
+    @GetMapping("/{roomId}/pending-requests")
+    @RequirePermission(MemberPermission.GET_PENDING_REQUESTS)
+    public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPendingRequests(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @RequestParam(defaultValue = "10") int limit
@@ -114,9 +126,9 @@ public class RoomController {
     }
 
     @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
-    @PostMapping("/{roomId}/approve/{userId}")
+    @PatchMapping("/{roomId}/pending-requests/{userId}")
     @RequirePermission(MemberPermission.APPROVE_MEMBER)
-    public ResponseEntity<Void> approve(
+    public ResponseEntity<Void> approveMember(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @PathVariable String userId,
@@ -132,88 +144,35 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Bật/tắt phê duyệt thành viên vào nhóm")
-    @PatchMapping("/{roomId}/approval/toggle")
-    @RequirePermission(MemberPermission.TOGGLE_APPROVE_MEMBER)
-    @RequireGroup
-    public ResponseEntity<Void> toggleApproveMember(
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId
-    ) {
-        roomDomainService.toggleApproveMember(roomId, jwt.getSubject());
-        return ResponseEntity.noContent().build();
-    }
-
-    @Operation(summary = "Bật/tắt cho phép thêm thành viên khác vào nhóm")
-    @PatchMapping("/{roomId}/add-member/toggle")
-    @RequirePermission(MemberPermission.TOGGLE_ALLOW_ADD_MEMBER)
-    @RequireGroup
-    public ResponseEntity<Void> toggleAllowAddMember(
-            @AuthenticationPrincipal Jwt jwt,
-            @RoomId @PathVariable String roomId
-    ) {
-        roomDomainService.toggleAllowAddMember(roomId, jwt.getSubject());
-        return ResponseEntity.noContent().build();
-    }
-
-    @Operation(summary = "Bật/tắt cho phép thành viên gửi tin nhắn")
-    @PatchMapping("/{roomId}/message/toggle")
-    @RequirePermission(MemberPermission.TOGGLE_ALLOW_SEND_MESSAGE)
-    @RequireGroup
-    public ResponseEntity<Void> toggleAllowSendMessage(
-            @AuthenticationPrincipal Jwt jwt,
-            @RoomId @PathVariable String roomId
-    ) {
-        roomDomainService.toggleAllowSendMessage(roomId, jwt.getSubject());
-        return ResponseEntity.noContent().build();
-    }
-
-    @Operation(summary = "Bật/tắt cho phép thành viên cập nhật tên/avatar nhóm")
-    @PatchMapping("/{roomId}/update-group/toggle")
-    @RequirePermission(MemberPermission.TOGGLE_ALLOW_UPDATE_GROUP)
-    @RequireGroup
-    public ResponseEntity<Void> toggleAllowUpdateGroup(
-            @AuthenticationPrincipal Jwt jwt,
-            @RoomId @PathVariable String roomId
-    ) {
-        roomDomainService.toggleAllowUpdateGroup(roomId, jwt.getSubject());
-        return ResponseEntity.noContent().build();
-    }
-
-    @Operation(summary = "Phân bố phó nhóm")
-    @PatchMapping("/{roomId}/assign-vice-admin/{userId}")
-    @RequirePermission(MemberPermission.ADD_VICE_ADMIN)
-    @RequireGroup
-    public ResponseEntity<Void> addViceAdmin (
-            @AuthenticationPrincipal Jwt jwt,
+    @Operation(summary = "Chỉnh sửa quyền member")
+    @PatchMapping("/{roomId}/members/{memberId}")
+    @RequireAdmin
+    public ResponseEntity<Void> updateMember(
             @RoomId @PathVariable String roomId,
-            @PathVariable String userId
+            @PathVariable String memberId,
+            @RequestBody MemberUpdateRequest request
     ) {
-        roomDomainService.addViceAdmin(roomId, jwt.getSubject(), userId);
+        roomDomainService.updateMember(roomId, memberId, request);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Xoá thành viên ra khỏi nhóm")
-    @DeleteMapping("/{roomId}/remove-member/{userId}")
+    @DeleteMapping("/{roomId}/members/{memberId}")
     @RequirePermission(MemberPermission.REMOVE_MEMBER)
-    @RequireGroup
     public ResponseEntity<Void> removeMember (
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
-            @PathVariable String userId
+            @PathVariable String memberId
     ) {
-        roomDomainService.removeMember(roomId, jwt.getSubject(), userId);
+        roomDomainService.removeMember(roomId, jwt.getSubject(), memberId);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Giải tán nhóm")
-    @DeleteMapping("/{roomId}/disband")
-    @RequirePermission(MemberPermission.DISBAND_GROUP)
-    public ResponseEntity<Void> disbandGroup (
-            @AuthenticationPrincipal Jwt jwt,
-            @RoomId @PathVariable String roomId
-    ) {
-        roomDomainService.disbandGroup(roomId, jwt.getSubject());
+    @DeleteMapping("/{roomId}")
+    @RequireAdmin
+    public ResponseEntity<Void> disbandGroup (@RoomId @PathVariable String roomId) {
+        roomDomainService.disbandGroup(roomId);
         return ResponseEntity.noContent().build();
     }
 }

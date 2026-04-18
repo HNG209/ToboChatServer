@@ -14,6 +14,7 @@ public class RolePermission {
             MemberRole.VICE_ADMIN, Set.of(
                     MemberPermission.ADD_MEMBER,
                     MemberPermission.REMOVE_MEMBER,
+                    MemberPermission.GET_PENDING_REQUESTS,
                     MemberPermission.APPROVE_MEMBER,
                     MemberPermission.UPDATE_GROUP,
                     MemberPermission.SEND_MESSAGE,

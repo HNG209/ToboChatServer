@@ -22,6 +22,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 
 import static com.teamtobo.tobochatserver.RolePermission.hasPermission;
+import static com.teamtobo.tobochatserver.utils.Helper.isDMRoom;
 
 @Aspect
 @Component
@@ -57,6 +58,26 @@ public class PermissionAspect {
         if (member == null) {
             throw new AppException(ErrorCode.NOT_IN_ROOM);
         }
+
+        return joinPoint.proceed();
+    }
+
+    @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireAdmin)")
+    public Object checkAdmin(ProceedingJoinPoint joinPoint) throws Throwable {
+        String userId = getCurrentUserId();
+        String roomId = extractRoomId(joinPoint);
+
+        assert roomId != null;
+        if(isDMRoom(roomId))
+            throw new AppException(ErrorCode.ROOM_INVALID);
+
+        RoomMember member = roomMemberService.getMemberById(userId, roomId);
+
+        if(member == null)
+            throw new AppException(ErrorCode.NOT_IN_ROOM);
+
+        if(member.getRole() != MemberRole.ADMIN)
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
 
         return joinPoint.proceed();
     }

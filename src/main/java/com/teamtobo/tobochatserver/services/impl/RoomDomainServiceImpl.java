@@ -1,6 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
@@ -46,6 +48,29 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             case DM -> createDMRoom(userId, members);
             case GROUP -> createGroupRoom(userId, request, members);
         }
+    }
+
+    @Override
+    public void updateRoomSettings(String roomId, RoomUpdateRequest request) {
+        Room room = roomService.getRoomById(roomId, false);
+
+        if (request.getAllowSendMessage() != null) { // Cho phép gửi tin nhắn vào phòng
+            room.setAllowSendMessage(request.getAllowSendMessage());
+        }
+
+        if (request.getAllowAddMember() != null) { // Cho phép thêm thành viên vào phòng
+            room.setAllowAddMember(request.getAllowAddMember());
+        }
+
+        if (request.getAllowUpdateMetadata() != null) { // Cho phép cập nhật thông tin phòng
+            room.setAllowUpdateMetadata(request.getAllowUpdateMetadata());
+        }
+
+        if(request.getApproveMember() != null) { // Phê duyệt khi vào phòng
+            room.setApproveMember(request.getApproveMember());
+        }
+
+        roomTable.updateItem(room);
     }
 
     @Override
@@ -104,65 +129,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
     }
 
-    @Override
-    public void toggleApproveMember(String roomId, String userId) {
-
-        Room room = roomService.getRoomById(roomId, true);
-
-        RoomMember member = getMember(roomId, userId);
-        if (member.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
-        boolean newValue = !room.isApproveMember();
-
-        // nếu đang bật mà muốn tắt thì check pending
-        if (room.isApproveMember() && !newValue) {
-            boolean hasPending = groupPendingRequestTable.query(
-                    QueryEnhancedRequest.builder()
-                            .queryConditional(
-                                    QueryConditional.sortBeginsWith(
-                                            Key.builder()
-                                                    .partitionValue("ROOM#" + roomId)
-                                                    .sortValue("PENDING#")
-                                                    .build()
-                                    )
-                            )
-                            .limit(1)
-                            .build()
-            ).items().stream().findAny().isPresent();
-
-            if (hasPending) {
-                throw new AppException(ErrorCode.CANNOT_DISABLE_APPROVAL_WHEN_PENDING);
-            }
-        }
-
-        room.setApproveMember(newValue);
-        roomTable.putItem(room);
-    }
-
-    @Override
-    public void toggleAllowAddMember(String roomId, String userId) {
-        Room room = roomService.getRoomById(roomId, true);
-        room.setAllowAddMember(!room.isAllowAddMember());
-        roomTable.updateItem(room);
-    }
-
-    @Override
-    public void toggleAllowSendMessage(String roomId, String userId) {
-        Room room = roomService.getRoomById(roomId, true);
-        room.setAllowSendMessage(!room.isAllowSendMessage());
-        roomTable.updateItem(room);
-    }
-
-    @Override
-    public void toggleAllowUpdateGroup(String roomId, String userId) {
-        Room room = roomService.getRoomById(roomId, true);
-        room.setAllowUpdateMetadata(!room.isAllowUpdateMetadata());
-        roomTable.updateItem(room);
-    }
-
-
     // Add member khi đã tạo nhóm
     @Override
     public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
@@ -176,19 +142,18 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             handleAddMember(room, inviter, targetUser, targetUserId);
         }
     }
-
     @Override
-    public void addViceAdmin(String roomId, String adminId, String targetUserId) {
-        RoomMember targetMember = getMember(roomId, targetUserId);
-        targetMember.setRole(MemberRole.VICE_ADMIN);
+    public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
+        RoomMember targetMember = getMember(roomId, memberId);
+        targetMember.setRole(request.getMemberRole());
         targetMember.setUpdatedAt(Instant.now().toString());
         roomMemberTable.updateItem(targetMember);
     }
 
     @Override
-    public void removeMember(String roomId, String removerId, String targetUserId) {
+    public void removeMember(String roomId, String removerId, String memberId) {
         RoomMember remover = getMember(roomId, removerId);
-        RoomMember target = getMember(roomId, targetUserId);
+        RoomMember target = getMember(roomId, memberId);
 
         if (remover.getRole() == MemberRole.MEMBER) {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
@@ -202,7 +167,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     @Override
-    public void disbandGroup(String roomId, String userId) {
+    public void disbandGroup(String roomId) {
         List<RoomMember> members = roomMemberService.findAllRoomMembers(roomId);
 
         TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
@@ -311,36 +276,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         enhancedClient.transactWriteItems(tx.build());
     }
 
-//    private void createDMRoom(String userId, List<String> members) {
-//        // validate
-//        if (members.size() != 2) {
-//            throw new AppException(ErrorCode.ROOM_INVALID);
-//        }
-//
-//        // deterministic ID
-//        List<String> sorted = members.stream().sorted().toList();
-//        String roomId = sorted.get(0) + "_" + sorted.get(1);
-//
-//        // check tồn tại
-//        Room existed = roomService.getRoomById(roomId, true);
-//        if (existed != null) return;
-//
-//        String now = Instant.now().toString();
-//
-//        saveRoomToDynamoDB(
-//                userId,
-//                roomId,
-//                "Direct Message",
-//                RoomType.DM,
-//                sorted,
-//                now
-//        );
-//    }
-
     private void createGroupRoom(String userId, RoomCreateRequest request, List<String> members) {
 
         // validate
-        if (members.size() < 2) {
+        if (members.size() < 1) {
             throw new AppException(ErrorCode.GROUP_SIZE_INVALID);
         }
 
