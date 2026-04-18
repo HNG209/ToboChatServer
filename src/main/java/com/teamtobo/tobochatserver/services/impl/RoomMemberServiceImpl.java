@@ -312,6 +312,23 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     }
 
     @Override
+    public List<RoomMember> findAllRoomMembers(String roomId) {
+        String pk = "ROOM#" + roomId;
+
+        QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                Key.builder()
+                        .partitionValue(pk)
+                        .sortValue("MEMBER#")
+                        .build()
+        );
+
+        return roomMemberTable.query(r -> r.queryConditional(queryConditional))
+                .items()
+                .stream()
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
         String pk = "ROOM#" + roomId;
         String sk = "MEMBER#" + memberId;

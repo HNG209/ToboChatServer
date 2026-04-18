@@ -5,6 +5,8 @@ import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 
+import java.util.List;
+
 public interface RoomMemberService {
     void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now);
     RoomMember getMemberById(String memberId, String roomId);
@@ -13,5 +15,6 @@ public interface RoomMemberService {
     void increaseUnreadCount (String senderId, String roomId);
     void markAsReadedMessage (String userId, String roomId);
     int getUnreadCount (String userId, String roomId);
+    List<RoomMember> findAllRoomMembers (String roomId);
 }
 

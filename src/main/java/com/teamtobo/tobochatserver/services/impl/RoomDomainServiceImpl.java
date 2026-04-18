@@ -32,6 +32,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     private final UserService userService;
     private final RoomService roomService;
+    private final RoomMemberService roomMemberService;
 
     private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
@@ -143,15 +144,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void toggleAllowAddMember(String roomId, String userId) {
         Room room = roomService.getRoomById(roomId, true);
-        RoomMember member = getMember(roomId, userId);
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
-        if (member.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
         room.setAllowAddMember(!room.isAllowAddMember());
         roomTable.updateItem(room);
     }
@@ -159,15 +151,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void toggleAllowSendMessage(String roomId, String userId) {
         Room room = roomService.getRoomById(roomId, true);
-        RoomMember member = getMember(roomId, userId);
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
-        if (member.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
         room.setAllowSendMessage(!room.isAllowSendMessage());
         roomTable.updateItem(room);
     }
@@ -175,15 +158,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void toggleAllowUpdateGroup(String roomId, String userId) {
         Room room = roomService.getRoomById(roomId, true);
-        RoomMember member = getMember(roomId, userId);
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
-        if (member.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
         room.setAllowUpdateMetadata(!room.isAllowUpdateMetadata());
         roomTable.updateItem(room);
     }
@@ -192,57 +166,27 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // Add member khi đã tạo nhóm
     @Override
     public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
-
         Room room = roomService.getRoomById(roomId, true);
-
-        if (room.getRoomType() != RoomType.GROUP)
-            throw new AppException(ErrorCode.ROOM_INVALID);
-
         RoomMember inviter = getMember(roomId, inviterId);
-
-        if(inviter.getRole() != MemberRole.ADMIN && !room.isAllowAddMember())
-            throw new AppException(ErrorCode.ADD_MEMBER_NOT_ALLOWED);
-
         for (String targetUserId : targetUserIds) {
-
             if (isMember(roomId, targetUserId)) continue;
 
             validateFriend(inviterId, targetUserId);
-
             User targetUser = userService.getUserById(targetUserId);
-
             handleAddMember(room, inviter, targetUser, targetUserId);
         }
     }
 
     @Override
     public void addViceAdmin(String roomId, String adminId, String targetUserId) {
-        Room room = roomService.getRoomById(roomId, true);
-
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-        RoomMember admin = getMember(roomId, adminId);
-
-        if (admin.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
         RoomMember targetMember = getMember(roomId, targetUserId);
-
         targetMember.setRole(MemberRole.VICE_ADMIN);
         targetMember.setUpdatedAt(Instant.now().toString());
-
         roomMemberTable.updateItem(targetMember);
     }
 
     @Override
     public void removeMember(String roomId, String removerId, String targetUserId) {
-        Room room = roomService.getRoomById(roomId, true);
-
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
         RoomMember remover = getMember(roomId, removerId);
         RoomMember target = getMember(roomId, targetUserId);
 
@@ -258,13 +202,25 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     @Override
-    public void leaveGroup(String roomId, String userId) {
-        Room room = roomService.getRoomById(roomId, true);
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
+    public void disbandGroup(String roomId, String userId) {
+        List<RoomMember> members = roomMemberService.findAllRoomMembers(roomId);
+
+        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        txBuilder.addDeleteItem(roomTable, Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("METADATA")
+                .build());
+
+        for (RoomMember member : members) {
+            txBuilder.addDeleteItem(roomMemberTable, member);
         }
-        RoomMember member = getMember(roomId, userId);
-        roomMemberTable.deleteItem(member);
+
+        try {
+            enhancedClient.transactWriteItems(txBuilder.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.ROOM_DISBAND_ERROR);
+        }
     }
 
     @Override
@@ -532,7 +488,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
     }
 
-    private RoomMember getMember(String roomId, String userId) {
+    @Override
+    public RoomMember getMember(String roomId, String userId) {
         RoomMember member = roomMemberTable.getItem(
                 Key.builder()
                         .partitionValue("ROOM#" + roomId)
