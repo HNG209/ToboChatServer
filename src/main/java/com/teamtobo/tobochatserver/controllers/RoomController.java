@@ -37,6 +37,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Cài đặt trạng thái phòng")
     @PatchMapping("/{roomId}")
     @RequireAdmin
     public ResponseEntity<Void> updateRoomSettings(
@@ -109,7 +110,7 @@ public class RoomController {
     @RequirePermission(MemberPermission.GET_PENDING_REQUESTS)
     public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPendingRequests(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @RequestParam(defaultValue = "10") int limit
     ) {
         String userId = jwt.getSubject();

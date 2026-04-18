@@ -73,7 +73,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     @Override
     public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
-
         Room room = roomService.getRoomById(roomId, true);
 
         //phải là group
@@ -101,6 +100,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         groupPendingRequestTable.deleteItem(
                 Key.builder().partitionValue(pk).sortValue(sk).build()
         );
+
+        room.setPendingCount(room.getPendingCount() - 1);
+        roomTable.updateItem(room);
 
         //reject
         if (!accept) return;
@@ -204,8 +206,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void leaveGroup(String userId, String roomId, String newAdminId) {
         RoomMember member = getMember(roomId, userId);
+        Room room = roomService.getRoomById(roomId, true);
 
+        room.setMemberCount(room.getMemberCount() - 1);
         TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        txBuilder.addUpdateItem(roomTable, room);
 
         if (member.getRole() == MemberRole.ADMIN) {
             if(newAdminId == null)
@@ -387,6 +393,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .roomType(type)
                 .createdAt(now)
                 .updatedAt(now)
+                .memberCount(memberIds.size())
+                .pendingCount(0)
                 .build();
 
         // Lưu metadata trước
@@ -498,7 +506,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void addMember(String roomId, String userId, String roomName) {
+        TransactWriteItemsEnhancedRequest.Builder tx =
+                TransactWriteItemsEnhancedRequest.builder();
         String now = Instant.now().toString();
+        Room room = roomService.getRoomById(roomId, false);
+
+        room.setMemberCount(room.getMemberCount() + 1);
+
+        tx.addUpdateItem(roomTable, room);
 
         RoomMember member = RoomMember.builder()
                 .pk("ROOM#" + roomId)
@@ -513,7 +528,13 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .statusTime("STATUS#ACTIVE#TIME#" + now)
                 .build();
 
-        roomMemberTable.putItem(member);
+        tx.addPutItem(roomMemberTable, member);
+
+        try {
+            enhancedClient.transactWriteItems(tx.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.ADD_MEMBER_ERROR);
+        }
     }
 
     private void createGroupAcceptRequest(String roomId, String inviterId, String targetUserId, String roomName) {
@@ -529,15 +550,28 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void createGroupPendingRequest(String roomId, String inviterId, String targetUserId, String roomName) {
-        groupPendingRequestTable.putItem(
-                GroupPendingRequest.builder()
-                        .pk("ROOM#" + roomId)
-                        .sk("PENDING#" + targetUserId)
-                        .roomId(roomId)
-                        .userId(targetUserId)
-                        .requesterId(inviterId)
-                        .roomName(roomName)
-                        .build()
-        );
+        TransactWriteItemsEnhancedRequest.Builder tx =
+                TransactWriteItemsEnhancedRequest.builder();
+
+        Room room = roomService.getRoomById(roomId, true);
+        room.setPendingCount(room.getPendingCount() + 1);
+        tx.addUpdateItem(roomTable, room);
+
+        GroupPendingRequest groupPendingRequest = GroupPendingRequest.builder()
+                .pk("ROOM#" + roomId)
+                .sk("PENDING#" + targetUserId)
+                .roomId(roomId)
+                .userId(targetUserId)
+                .requesterId(inviterId)
+                .roomName(roomName)
+                .build();
+
+        tx.addPutItem(groupPendingRequestTable, groupPendingRequest);
+
+        try {
+            enhancedClient.transactWriteItems(tx.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.GROUP_PENDING_ERROR);
+        }
     }
 }
