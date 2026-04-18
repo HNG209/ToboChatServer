@@ -131,11 +131,80 @@ public class RoomController {
 
     @Operation(summary = "Bật/tắt phê duyệt thành viên vào nhóm")
     @PatchMapping("/{roomId}/approval/toggle")
+    @RequirePermission(MemberPermission.TOGGLE_APPROVE_MEMBER)
     public ResponseEntity<Void> toggleApproveMember(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId
     ) {
         roomDomainService.toggleApproveMember(roomId, jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Bật/tắt cho phép thêm thành viên khác vào nhóm")
+    @PatchMapping("/{roomId}/add-member/toggle")
+    @RequirePermission(MemberPermission.TOGGLE_ALLOW_ADD_MEMBER)
+    public ResponseEntity<Void> toggleAllowAddMember(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId
+    ) {
+        roomDomainService.toggleAllowAddMember(roomId, jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Bật/tắt cho phép thành viên gửi tin nhắn")
+    @PatchMapping("/{roomId}/message/toggle")
+    @RequirePermission(MemberPermission.TOGGLE_ALLOW_SEND_MESSAGE)
+    public ResponseEntity<Void> toggleAllowSendMessage(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId
+    ) {
+        roomDomainService.toggleAllowSendMessage(roomId, jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Bật/tắt cho phép thành viên cập nhật tên/avatar nhóm")
+    @PatchMapping("/{roomId}/update-group/toggle")
+    @RequirePermission(MemberPermission.TOGGLE_ALLOW_UPDATE_GROUP)
+    public ResponseEntity<Void> toggleAllowUpdateGroup(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId
+    ) {
+        roomDomainService.toggleAllowUpdateGroup(roomId, jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Phân bố phó nhóm")
+    @PatchMapping("/{roomId}/assign-vice-admin/{userId}")
+    @RequirePermission(MemberPermission.ADD_VICE_ADMIN)
+    public ResponseEntity<Void> addViceAdmin (
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId,
+            @PathVariable String userId
+    ) {
+        roomDomainService.addViceAdmin(roomId, jwt.getSubject(), userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Xoá thành viên ra khỏi nhóm")
+    @DeleteMapping("/{roomId}/remove-member/{userId}")
+    @RequirePermission(MemberPermission.REMOVE_MEMBER)
+    public ResponseEntity<Void> removeMember (
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId,
+            @PathVariable String userId
+    ) {
+        roomDomainService.removeMember(roomId, jwt.getSubject(), userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Rời khỏi nhóm")
+    @DeleteMapping("/{roomId}/leave-group")
+    @RequirePermission(MemberPermission.LEAVE_GROUP)
+    public ResponseEntity<Void> leaveGroup (
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId
+    ) {
+        roomDomainService.leaveGroup(roomId, jwt.getSubject());
         return ResponseEntity.noContent().build();
     }
 }

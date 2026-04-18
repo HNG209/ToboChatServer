@@ -140,6 +140,55 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         roomTable.putItem(room);
     }
 
+    @Override
+    public void toggleAllowAddMember(String roomId, String userId) {
+        Room room = roomService.getRoomById(roomId, true);
+        RoomMember member = getMember(roomId, userId);
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        room.setAllowAddMember(!room.isAllowAddMember());
+        roomTable.updateItem(room);
+    }
+
+    @Override
+    public void toggleAllowSendMessage(String roomId, String userId) {
+        Room room = roomService.getRoomById(roomId, true);
+        RoomMember member = getMember(roomId, userId);
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        room.setAllowSendMessage(!room.isAllowSendMessage());
+        roomTable.updateItem(room);
+    }
+
+    @Override
+    public void toggleAllowUpdateGroup(String roomId, String userId) {
+        Room room = roomService.getRoomById(roomId, true);
+        RoomMember member = getMember(roomId, userId);
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        room.setAllowUpdateMetadata(!room.isAllowUpdateMetadata());
+        roomTable.updateItem(room);
+    }
+
+
     // Add member khi đã tạo nhóm
     @Override
     public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
@@ -164,6 +213,58 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             handleAddMember(room, inviter, targetUser, targetUserId);
         }
+    }
+
+    @Override
+    public void addViceAdmin(String roomId, String adminId, String targetUserId) {
+        Room room = roomService.getRoomById(roomId, true);
+
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+        RoomMember admin = getMember(roomId, adminId);
+
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        RoomMember targetMember = getMember(roomId, targetUserId);
+
+        targetMember.setRole(MemberRole.VICE_ADMIN);
+        targetMember.setUpdatedAt(Instant.now().toString());
+
+        roomMemberTable.updateItem(targetMember);
+    }
+
+    @Override
+    public void removeMember(String roomId, String removerId, String targetUserId) {
+        Room room = roomService.getRoomById(roomId, true);
+
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+        RoomMember remover = getMember(roomId, removerId);
+        RoomMember target = getMember(roomId, targetUserId);
+
+        if (remover.getRole() == MemberRole.MEMBER) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        if (remover.getRole() == MemberRole.VICE_ADMIN && target.getRole() != MemberRole.MEMBER) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        roomMemberTable.deleteItem(target);
+    }
+
+    @Override
+    public void leaveGroup(String roomId, String userId) {
+        Room room = roomService.getRoomById(roomId, true);
+        if (room.getRoomType() != RoomType.GROUP) {
+            throw new AppException(ErrorCode.ROOM_INVALID);
+        }
+        RoomMember member = getMember(roomId, userId);
+        roomMemberTable.deleteItem(member);
     }
 
     @Override
