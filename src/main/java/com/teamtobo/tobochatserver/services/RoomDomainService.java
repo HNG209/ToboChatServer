@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 
@@ -17,5 +18,7 @@ public interface RoomDomainService {
     void updateMember(String roomId, String targetUserId, MemberUpdateRequest request);
     void removeMember(String roomId, String removerId, String memberId);
     void disbandGroup(String roomId);
+    LeaveCheckResponse checkLeave(String userId, String roomId);
+    void leaveGroup(String userId, String roomId, String newAdminId);
     RoomMember getMember(String roomId, String userId);
 }

@@ -73,6 +73,8 @@ public enum ErrorCode {
     ROOM_CREATE_ERROR(433333, "[43333] Room create error", HttpStatus.INTERNAL_SERVER_ERROR),
     ROOM_NAME_REQUIRED(444444, "[44444] Room name required", HttpStatus.BAD_REQUEST),
     ROOM_DISBAND_ERROR(455555, "[455555] Room disband error", HttpStatus.BAD_REQUEST),
+    CANNOT_LEAVE_ROOM(666777, "[666777] Cannot leave room", HttpStatus.BAD_REQUEST),
+    REQUIRE_EXCHANGER(777888, "[777888] Leave room require exchanger", HttpStatus.BAD_REQUEST),
 
     INVALID_AVATAR_URL(6001, "[6001] Invalid avatar url", HttpStatus.BAD_REQUEST),
     ROOM_NOT_FOUND(40031, "[40031] Room not found", HttpStatus.NOT_FOUND),

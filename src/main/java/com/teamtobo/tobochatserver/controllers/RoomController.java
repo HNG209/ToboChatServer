@@ -1,14 +1,8 @@
 package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.annotations.*;
-import com.teamtobo.tobochatserver.dtos.request.AddMemberRequest;
-import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
-import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
-import com.teamtobo.tobochatserver.dtos.response.GroupPendingRequestResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.request.*;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
@@ -168,10 +162,35 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Kiểm tra trạng thái trước khi rời nhóm")
+    @GetMapping("/{roomId}/leave-check")
+    @RequireRoomMember
+    public ApiResponse<LeaveCheckResponse> checkLeave(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId
+    ) {
+        String userId = jwt.getSubject();
+        return ApiResponse.<LeaveCheckResponse>builder()
+                .result(roomDomainService.checkLeave(userId, roomId))
+                .build();
+    }
+
+    @Operation(summary = "Rời nhóm")
+    @DeleteMapping("/{roomId}/members/me")
+    @RequireRoomMember
+    public ResponseEntity<Void> leaveGroup(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId,
+            @RequestParam String newAdminId) {
+        String userId = jwt.getSubject();
+        roomDomainService.leaveGroup(userId, roomId, newAdminId);
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Giải tán nhóm")
     @DeleteMapping("/{roomId}")
     @RequireAdmin
-    public ResponseEntity<Void> disbandGroup (@RoomId @PathVariable String roomId) {
+    public ResponseEntity<Void> disbandGroup(@RoomId @PathVariable String roomId) {
         roomDomainService.disbandGroup(roomId);
         return ResponseEntity.noContent().build();
     }

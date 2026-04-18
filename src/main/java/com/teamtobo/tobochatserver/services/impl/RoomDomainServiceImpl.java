@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
@@ -16,13 +17,10 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -185,6 +183,48 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             enhancedClient.transactWriteItems(txBuilder.build());
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_DISBAND_ERROR);
+        }
+    }
+
+    @Override
+    public LeaveCheckResponse checkLeave(String userId, String roomId) {
+        RoomMember member = getMember(roomId, userId);
+
+        if(member.getRole() == MemberRole.ADMIN)
+            return LeaveCheckResponse.builder()
+                    .canLeave(false)
+                    .reason("TRANSFER_REQUIRED")
+                    .build();
+
+        return LeaveCheckResponse.builder()
+                .canLeave(true)
+                .build();
+    }
+
+    @Override
+    public void leaveGroup(String userId, String roomId, String newAdminId) {
+        RoomMember member = getMember(roomId, userId);
+
+        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        if (member.getRole() == MemberRole.ADMIN) {
+            if(newAdminId == null)
+                throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+            RoomMember newAdmin = getMember(roomId, newAdminId);
+
+            if (newAdmin == null)
+                throw new AppException(ErrorCode.NOT_IN_ROOM);
+
+            newAdmin.setRole(MemberRole.ADMIN); // thay thế admin
+
+            txBuilder.addUpdateItem(roomMemberTable, newAdmin);
+        }
+
+        txBuilder.addDeleteItem(roomMemberTable, member);
+        try {
+            enhancedClient.transactWriteItems(txBuilder.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.CANNOT_LEAVE_ROOM);
         }
     }
 
