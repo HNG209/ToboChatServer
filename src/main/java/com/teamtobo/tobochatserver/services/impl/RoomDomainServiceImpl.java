@@ -14,6 +14,7 @@ import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -190,6 +191,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
+
+            for (RoomMember member: members) {
+                socketIOServer.getRoomOperations(Helper.normalizeId(member.getSk()))
+                        .sendEvent("room_disband", roomId);
+            }
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_DISBAND_ERROR);
         }

@@ -67,10 +67,6 @@ public class PermissionAspect {
         String userId = getCurrentUserId();
         String roomId = extractRoomId(joinPoint);
 
-        assert roomId != null;
-        if(isDMRoom(roomId))
-            throw new AppException(ErrorCode.ROOM_INVALID);
-
         RoomMember member = roomMemberService.getMemberById(userId, roomId);
 
         if(member == null)
