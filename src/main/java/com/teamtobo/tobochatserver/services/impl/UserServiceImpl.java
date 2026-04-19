@@ -309,10 +309,13 @@ public class UserServiceImpl implements UserService {
                             if(roomId != null && !roomId.isEmpty())
                                 inRoom = roomMemberTable.getItem(key) != null;
 
+                            User user = getUserById(Helper.normalizeId(i.getSk()));
+
                             return FriendResponse.builder()
                                     .id(i.getSk())
                                     .name(i.getName())
                                     .inRoom(inRoom) // optional
+                                    .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                                     .avatarUrl(i.getAvatarUrl())
                                     .createdAt(i.getCreatedAt())
                                     .build();

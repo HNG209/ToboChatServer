@@ -16,8 +16,8 @@ public class FriendResponse {
     String name;
     String avatarUrl;
     String createdAt; // Ngày đồng ý kết bạn
-
     Boolean inRoom; // Bạn bè tương đối với phòng hiện tại
+    boolean allowAutoAddToGroup;
     public String getId() {
         return Helper.normalizeId(this.id);
     }

@@ -65,6 +65,19 @@ public class RoomController {
                 .build();
     }
 
+    @Operation(summary = "Thông tin của tôi trong phòng")
+    @GetMapping("/{roomId}/me")
+    @RequireRoomMember
+    public ApiResponse<RoomMemberResponse> getMyInfo(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId) {
+        String userId = jwt.getSubject();
+
+        return ApiResponse.<RoomMemberResponse>builder()
+                .result(roomMemberService.getMember(userId, roomId))
+                .build();
+    }
+
     @Operation(summary = "Lấy thông tin phòng")
     @GetMapping("/{roomId}")
     public ApiResponse<RoomResponse> getRoomMetadata(

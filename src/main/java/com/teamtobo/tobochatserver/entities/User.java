@@ -26,6 +26,7 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     int friendRequestCount;
     int groupRequestCount;
     int totalUnreadMessages;
+    int totalUnreadContacts; // friendRequestCount + groupRequestCount + ...
 
     @Override
     public EntityType getEntityType() {

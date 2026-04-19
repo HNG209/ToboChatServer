@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Room;
@@ -352,6 +353,16 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build();
 
         return roomMemberTable.getItem(key);
+    }
+
+    @Override
+    public RoomMemberResponse getMember(String memberId, String roomId) {
+        RoomMember member = getMemberById(memberId, roomId);
+        return RoomMemberResponse.builder()
+                .roomName(member.getRoomName())
+                .role(member.getRole())
+                .roomType(member.getRoomType())
+                .build();
     }
 }
 
