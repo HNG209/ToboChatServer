@@ -18,5 +18,6 @@ public interface RoomMemberService {
     void markAsReadedMessage (String userId, String roomId);
     int getUnreadCount (String userId, String roomId);
     List<RoomMember> findAllRoomMembers(String roomId);
+    PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit);
 }
 

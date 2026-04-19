@@ -14,6 +14,7 @@ import lombok.experimental.FieldDefaults;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RoomMemberResponse {
+    String id;
     MemberRole role;
     String roomName;
     InboxStatus status;

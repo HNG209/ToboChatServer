@@ -134,6 +134,19 @@ public class RoomController {
                 .build();
     }
 
+    @Operation(summary = "Lấy danh sách pending request của nhóm")
+    @GetMapping("/{roomId}/members")
+    @RequireRoomMember
+    public ApiResponse<PageResponse<RoomMemberResponse>> getRoomMembers(
+            @RoomId @PathVariable String roomId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+        return ApiResponse.<PageResponse<RoomMemberResponse>>builder()
+                .result(roomMemberService.getRoomMembers(roomId, cursor, limit))
+                .build();
+    }
+
     @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
     @PatchMapping("/{roomId}/pending-requests/{userId}")
     @RequirePermission(MemberPermission.APPROVE_MEMBER)

@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
@@ -18,12 +19,18 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -136,6 +143,23 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             createGroupAcceptRequest(roomId, adminId, targetUserId, room.getRoomName());
         }
     }
+
+//    @Override
+//    public List<GroupAcceptRequest> getSentInvites(String roomId, String cursor, int limit) {
+//        DynamoDbIndex<GroupAcceptRequest> index = groupAcceptRequestTable.index("GSI_GroupAcceptRequest");
+//
+//        String partitionKeyValue = "ROOM_ACCEPT#" + roomId;
+//
+//        // 3. Tạo điều kiện truy vấn (Query: PK = partitionKeyValue)
+//        QueryConditional queryConditional = QueryConditional
+//                .keyEqualTo(Key.builder().partitionValue(partitionKeyValue).build());
+//
+//        // 4. Thực thi truy vấn và map kết quả ra List
+//        return index.query(queryConditional)
+//                .stream()
+//                .flatMap(page -> page.items().stream())
+//                .collect(Collectors.toList());
+//    }
 
     // Add member khi đã tạo nhóm
     @Override
@@ -599,6 +623,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .pk("USER#" + targetUserId)
                         .sk("ROOM_ACCEPT#" + roomId)
                         .roomId(roomId)
+                        .groupRequestPk("ROOM_ACCEPT#" + roomId)
+                        .receiverSk("USER#" + targetUserId)
                         .inviterId(inviterId)
                         .roomName(roomName)
                         .build()

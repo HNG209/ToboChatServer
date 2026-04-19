@@ -7,9 +7,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.*;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -17,11 +15,24 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
 @NoArgsConstructor
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class GroupAcceptRequest extends BaseEntity {
+public class GroupAcceptRequest extends BaseEntity { // Lời mời vào nhóm
     String roomId;
     String inviterId;
     String roomName;
     String avatarUrl;
+
+    String groupRequestPk;
+    String receiverSk;
+
+    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_GroupAcceptRequest")
+    public String getGroupRequestPk() {
+        return groupRequestPk;
+    }
+
+    @DynamoDbSecondarySortKey(indexNames = "GSI_GroupAcceptRequest")
+    public String getReceiverSk() {
+        return receiverSk;
+    }
 
     @Override
     public EntityType getEntityType() {

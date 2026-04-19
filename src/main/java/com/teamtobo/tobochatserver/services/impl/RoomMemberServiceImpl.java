@@ -26,10 +26,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,17 +36,67 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final RoomService roomService;
     private final UserService userService;
     private final ChatService chatService;
-
-    /**
-     * Lấy danh sách phòng đã tham gia của user với pagination
-     * @param userId
-     * @param cursor
-     * @param limit
-     * @return
-     */
-    // Deprecated
     private final DynamoDbClient lowLevelClient;
     private final SocketIOServer socketIOServer;
+
+    @Override
+    public PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit) {
+        if (roomId == null || roomId.trim().isEmpty()) {
+            return PageResponse.<RoomMemberResponse>builder().items(List.of()).build();
+        }
+
+        // 1. Xác định Partition Key và Sort Key Prefix cho Bảng chính
+        String pkValue = "ROOM#" + roomId;
+        String skPrefix = "MEMBER#";
+
+        // 2. Xây dựng Query Builder với điều kiện sortBeginsWith
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(
+                        k -> k.partitionValue(pkValue).sortValue(skPrefix)
+                ))
+                .limit(limit);
+
+        // 3. Xử lý phân trang (Pagination)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            // Truy vấn trên Base Table chỉ cần đúng pk và sk
+            exclusiveStartKey.put("pk", AttributeValue.builder().s(pkValue).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(cursor).build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // 4. Truy vấn trực tiếp trên Bảng chính (không dùng .index())
+        SdkIterable<Page<RoomMember>> results = roomMemberTable.query(builder.build());
+        Iterator<Page<RoomMember>> iterator = results.iterator();
+
+        if (!iterator.hasNext()) {
+            return PageResponse.<RoomMemberResponse>builder().items(List.of()).build();
+        }
+
+        Page<RoomMember> page = iterator.next();
+
+        // 5. Lấy cursor cho trang tiếp theo (chính là giá trị SK của thành viên cuối cùng)
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null && page.lastEvaluatedKey().containsKey("sk")) {
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        // 6. Map kết quả sang Response
+        return PageResponse.<RoomMemberResponse>builder()
+                .items(page.items().stream().map(
+                        item -> RoomMemberResponse.builder()
+                                // Helper.normalizeId sẽ cắt tiền tố "MEMBER#" đi để trả về ID sạch
+                                .id(item.getMemberId())
+                                .role(item.getRole())
+                                .status(item.getStatus())
+                                .roomType(item.getRoomType())
+                                .addedBy(item.getAddedBy())
+                                .build()
+                ).toList())
+                .nextCursor(nextCursor)
+                .build();
+    }
 
     @Override
     public void increaseUnreadCount(String senderId, String roomId) {
