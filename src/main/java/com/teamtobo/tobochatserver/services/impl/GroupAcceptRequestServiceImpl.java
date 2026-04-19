@@ -2,14 +2,19 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
+import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
 import com.teamtobo.tobochatserver.services.RoomService;
+import com.teamtobo.tobochatserver.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.*;
@@ -22,12 +27,15 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService {
-
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<GroupAcceptRequest> requestTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
+    private final DynamoDbTable<Room> roomTable;
     private final RoomService roomService;
+    private final ChatService chatService;
+    private final UserService userService;
 
+    // TODO: xử lý phân trang
     @Override
     public PageResponse<GroupAcceptRequestResponse> getInvites(
             String userId,
@@ -55,7 +63,8 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
                 .map(item -> GroupAcceptRequestResponse.builder()
                         .roomId(item.getRoomId())
                         .roomName(item.getRoomName())
-                        .inviterId(item.getInviterId())
+                        .avatarUrl(item.getAvatarUrl())
+                        .inviter(userService.getUserProfile(item.getInviterId()))
                         .build())
                 .collect(Collectors.toList());
 
@@ -65,8 +74,9 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
                 .build();
     }
 
+    // Thêm response type để cập nhật trực tiếp trên UI mà ko cần fetch lại
     @Override
-    public void respondInvite(String userId, String roomId, boolean accepted) {
+    public RoomResponse respondInvite(String userId, String roomId, boolean accepted) {
 
         String pk = "USER#" + userId;
         String sk = "ROOM_ACCEPT#" + roomId;
@@ -82,7 +92,7 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
             throw new AppException(ErrorCode.REQUEST_NOT_FOUND);
         }
 
-        roomService.getRoomById(roomId, true);
+        Room room = roomService.getRoomById(roomId, true);
 
         //check đã là member chưa
         RoomMember existing = roomMemberTable.getItem(
@@ -94,10 +104,14 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
 
         if (existing != null) {
             requestTable.deleteItem(key);
-            return;
+            return null;
         }
 
         TransactWriteItemsEnhancedRequest.Builder tx = TransactWriteItemsEnhancedRequest.builder();
+
+        // Tăng memberCount
+        room.setMemberCount(room.getMemberCount() + 1);
+        tx.addUpdateItem(roomTable, room);
 
         if (accepted) {
             String now = Instant.now().toString();
@@ -106,6 +120,7 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
                     .pk("ROOM#" + roomId)
                     .sk("MEMBER#" + userId)
                     .role(MemberRole.MEMBER)
+                    .roomType(RoomType.GROUP)
                     .status(InboxStatus.ACTIVE)
                     .roomName(request.getRoomName())
                     .lastActivityAt(now)
@@ -121,6 +136,17 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
 
         try {
             enhancedClient.transactWriteItems(tx.build());
+
+            if (!accepted) return null;
+            return RoomResponse.builder()
+                    .id(roomId)
+                    .roomName(room.getRoomName())
+                    .roomType(room.getRoomType())
+                    .memberCount(room.getMemberCount())
+                    // Lấy tin nhắn mới nhất của phòng hiện có perspective to userId
+                    .latestMessage(chatService.getLatestMessage(userId, roomId))
+                    .avatarUrl(room.getAvatarUrl())
+                    .build();
         } catch (Exception e) {
             throw new AppException(ErrorCode.GROUP_INVITE_HANDLE_FAILED);
         }

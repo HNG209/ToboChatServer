@@ -16,6 +16,7 @@ public interface UserService {
     PageResponse<UserResponse> findByEmail(String userId, String email, String cursor, int limit);
     PageResponse<FriendResponse> getFriends(
             String userId,
+            String roomId,
             String cursor,
             int limit
     );

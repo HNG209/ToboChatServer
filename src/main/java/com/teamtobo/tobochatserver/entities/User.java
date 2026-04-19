@@ -23,6 +23,8 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     String searchPk;
     String searchSk;
 
+    int friendRequestCount;
+    int groupRequestCount;
     int totalUnreadMessages;
 
     @Override

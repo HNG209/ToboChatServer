@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
+import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
@@ -45,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+    private final DynamoDbTable<RoomMember> roomMemberTable;
     private final DynamoDbTable<User> userTable;
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
@@ -245,6 +247,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public PageResponse<FriendResponse> getFriends(
             String userId,
+            String roomId, // optional param
             String cursor,
             int limit
     ) {
@@ -296,12 +299,24 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendResponse>builder()
                 .items(page.items().stream().map(
-                        i -> FriendResponse.builder()
-                                .id(i.getSk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            Key key = Key.builder()
+                                    .partitionValue("ROOM#" + roomId)
+                                    .sortValue("MEMBER#" + Helper.normalizeId(i.getSk()))
+                                    .build();
+
+                            Boolean inRoom = null;
+                            if(roomId != null && !roomId.isEmpty())
+                                inRoom = roomMemberTable.getItem(key) != null;
+
+                            return FriendResponse.builder()
+                                    .id(i.getSk())
+                                    .name(i.getName())
+                                    .inRoom(inRoom) // optional
+                                    .avatarUrl(i.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt())
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();

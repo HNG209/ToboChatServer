@@ -18,10 +18,10 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GroupAcceptRequest extends BaseEntity {
-
     String roomId;
     String inviterId;
     String roomName;
+    String avatarUrl;
 
     @Override
     public EntityType getEntityType() {
