@@ -28,13 +28,14 @@ public class RoomController {
 
     @Operation(summary = "Tạo nhóm chat")
     @PostMapping
-    public ResponseEntity<Void> createGroup(
+    public ApiResponse<RoomResponse> createGroup(
             @AuthenticationPrincipal Jwt jwt,
             @RequestBody RoomCreateRequest request) {
         String userId = jwt.getSubject();
 
-        roomDomainService.createRoom(userId, request, RoomType.GROUP);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<RoomResponse>builder()
+                .result(roomDomainService.createRoom(userId, request, RoomType.GROUP))
+                .build();
     }
 
     @Operation(summary = "Cài đặt trạng thái phòng")

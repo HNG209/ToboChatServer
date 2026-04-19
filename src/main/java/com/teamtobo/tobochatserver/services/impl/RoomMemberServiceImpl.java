@@ -186,11 +186,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             Room room = roomService.getRoomById(i.getPk(), false);
             RoomResponse response = getRoomMetadata(userId, i.getPk());
             response.setLatestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())));
-//            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
-//                    .id(i.getPk())
-//                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
-//                    .roomType(room.getRoomType())
-//                    .createdAt(i.getCreatedAt());
 
             if (room.getRoomType() == RoomType.DM) {
                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
@@ -205,19 +200,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                             });
                 }
             }
-//            else { // GROUP
-//                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//                if (memberIds.size() > 2) {
-//                    String groupName = memberIds.stream()
-//                            .limit(3)
-//                            .map(memberId -> userService.getUserProfile(memberId).getName())
-//                            .collect(Collectors.joining(", "));
-//                    responseBuilder.roomName(groupName);
-//                } else {
-//                    responseBuilder.roomName(i.getRoomName());
-//                }
-//            }
-//            return responseBuilder.build();
             return response;
         }).toList();
 
@@ -270,17 +252,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                         });
 
             }
-        } else { // GROUP
-//            List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//            if (memberIds.size() > 2) {
-//                String groupName = memberIds.stream()
-//                        .limit(3)
-//                        .map(memberId -> userService.getUserProfile(memberId).getName())
-//                        .collect(Collectors.joining(", "));
-//                responseBuilder.roomName(groupName);
-//            } else {
-//                responseBuilder.roomName(i.getRoomName());
-//            }
         }
 
         return RoomResponse.builder()
@@ -288,6 +259,11 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .roomName(room.getRoomName())
                 .avatarUrl(room.getAvatarUrl())
                 .roomType(room.getRoomType())
+                .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                .allowSendMessage(room.isAllowSendMessage())
+                .allowAddMember(room.isAllowAddMember())
+                .approveMember(room.isApproveMember())
+                .memberCount(room.getMemberCount())
                 .unreadMessages(unreadCount)
                 .build();
     }
