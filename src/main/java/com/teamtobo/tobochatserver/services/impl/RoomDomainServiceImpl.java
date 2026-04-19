@@ -14,7 +14,6 @@ import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
-import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -38,6 +37,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final UserService userService;
     private final RoomService roomService;
     private final RoomMemberService roomMemberService;
+    private final ChatService chatService;
 
     private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
@@ -333,11 +333,15 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         enhancedClient.transactWriteItems(tx.build());
 
-        return RoomResponse.builder()
-                .id(roomId)
-                .roomType(RoomType.DM)
-                .createdAt(now)
-                .build();
+        // Cập nhật real time cho người bên kia (otherId)
+        RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
+        otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
+        socketIOServer.getRoomOperations(otherId)
+                .sendEvent("new_room", otherRoomMetadata);
+
+        RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
+        myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        return myRoomMetadata;
     }
 
     private RoomResponse createGroupRoom(String userId, RoomCreateRequest request, List<String> members) {
@@ -359,7 +363,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 userId,
                 roomId,
                 request.getRoomName(),
-                RoomType.GROUP,
                 List.of(userId),
                 now
         );
@@ -400,11 +403,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     // Lưu Room (metadata) + RoomMember
-    private Room saveRoomToDynamoDB(
+    private void saveRoomToDynamoDB(
             String userId,
             String roomId,
             String roomName,
-            RoomType type,
             List<String> memberIds,
             String now
     ) {
@@ -420,7 +422,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .allowUpdateMetadata(true)
                 .allowSendMessage(true)
                 .approveMember(false)
-                .roomType(type)
+                .roomType(RoomType.GROUP)
                 .createdAt(now)
                 .updatedAt(now)
                 .memberCount(memberIds.size())
@@ -431,7 +433,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         txBuilder.addPutItem(roomTable, roomMetadata);
 
         for (String memberId : memberIds) {
-            boolean isAdmin = (Objects.equals(memberId, userId) && type == RoomType.GROUP);
+            boolean isAdmin = Objects.equals(memberId, userId);
 
             String sk = "MEMBER#" + memberId;
 
@@ -442,11 +444,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                     .status(InboxStatus.ACTIVE)
                     .roomName(roomName)
                     .lastActivityAt(now)
-                    .roomType(type)
+                    .roomType(RoomType.GROUP)
                     .createdAt(now)
                     .updatedAt(now)
                     .statusTime("STATUS#ACTIVE#TIME#" + now)
-                    .addedBy(type == RoomType.GROUP ? userId : null)
+                    .addedBy(userId)
                     .build();
 
             txBuilder.addPutItem(roomMemberTable, member);
@@ -454,7 +456,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
-            return roomMetadata;
         } catch (Exception e) {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
@@ -515,6 +516,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             .allowUpdateMetadata(room.isAllowUpdateMetadata())
                             .approveMember(room.isApproveMember())
                             .memberCount(room.getMemberCount())
+                            // Nếu phòng đã có tin nhắn trước đó
+                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
                             // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                             .build());
         } else {
