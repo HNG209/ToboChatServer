@@ -7,6 +7,7 @@ public enum MemberPermission {
     SEND_MESSAGE,
     UPDATE_GROUP,
     GET_PENDING_REQUESTS,
+    GET_SENT_REQUESTS,
     APPROVE_MEMBER,
     DISBAND_GROUP,
     LEAVE_GROUP

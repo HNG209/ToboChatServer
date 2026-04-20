@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.GroupSentRequestResponse;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -15,13 +16,19 @@ import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.*;
 import software.amazon.awssdk.enhanced.dynamodb.model.*;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,6 +41,65 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
     private final RoomService roomService;
     private final ChatService chatService;
     private final UserService userService;
+
+    // Danh sách người được mời chưa chấp nhận (đảo ngược hàm dưới)
+    @Override
+    public PageResponse<GroupSentRequestResponse> getSentRequests(String roomId, String cursor, int limit) {
+        String gsiPartitionKey = "ROOM#" + roomId;
+        DynamoDbIndex<GroupAcceptRequest> index = requestTable.index("GSI_GroupAcceptRequest");
+        // pk: roomId
+        // sk: userId
+
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(k -> k.partitionValue(gsiPartitionKey)))
+                .limit(limit);
+
+        // Xử lý Pagination Cursor (Giả sử cursor là receiverSk - ID người nhận)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+
+            // 1. Khoá của GSI (Phải khớp chính xác tên thuộc tính trong DynamoDB)
+            exclusiveStartKey.put("groupRequestPk", AttributeValue.builder().s(gsiPartitionKey).build());
+            exclusiveStartKey.put("receiverSk", AttributeValue.builder().s(cursor).build());
+
+            // 2. Khoá của Bảng gốc (Base Table)
+            exclusiveStartKey.put("pk", AttributeValue.builder().s("ROOM#" + roomId).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(cursor).build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // Thực thi Query trên Index
+        SdkIterable<Page<GroupAcceptRequest>> results = index.query(builder.build());
+        Iterator<Page<GroupAcceptRequest>> iterator = results.iterator();
+
+        // Xử lý an toàn trường hợp không có dữ liệu
+        if (!iterator.hasNext()) {
+            return PageResponse.<GroupSentRequestResponse>builder().items(List.of()).build();
+        }
+
+        Page<GroupAcceptRequest> firstPage = iterator.next();
+
+        if (firstPage.items().isEmpty()) {
+            return PageResponse.<GroupSentRequestResponse>builder().items(List.of()).build();
+        }
+
+        // Lấy cursor cho trang tiếp theo (dựa trên GSI Sort Key)
+        String nextCursor = null;
+        if (firstPage.lastEvaluatedKey() != null && firstPage.lastEvaluatedKey().containsKey("receiverSk")) {
+            nextCursor = firstPage.lastEvaluatedKey().get("receiverSk").s();
+        }
+
+        return PageResponse.<GroupSentRequestResponse>builder()
+                .items(firstPage.items().stream().map(
+                        i -> GroupSentRequestResponse.builder()
+                                .roomId(i.getRoomId())
+                                .user(userService.getUserProfile(Helper.normalizeId(i.getSk())))
+                                .build()
+                ).toList())
+                .nextCursor(nextCursor)
+                .build();
+    }
 
     // TODO: xử lý phân trang
     @Override
