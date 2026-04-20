@@ -87,6 +87,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
                 .totalUnreadMessages(user.getTotalUnreadMessages())
+                .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                 .build();
     }
 
@@ -111,6 +112,11 @@ public class UserServiceImpl implements UserService {
                 && !request.getDob().equals(user.getDob())) {
 
             user.setDob(request.getDob());
+            isChanged = true;
+        }
+
+        if(request.getAllowAutoAddToGroup() != null) {
+            user.setAllowAutoAddToGroup(request.getAllowAutoAddToGroup());
             isChanged = true;
         }
 

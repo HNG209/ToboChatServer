@@ -12,4 +12,5 @@ import lombok.experimental.FieldDefaults;
 public class UserUpdateRequest {
     String name;
     String dob;
+    Boolean allowAutoAddToGroup;
 }
