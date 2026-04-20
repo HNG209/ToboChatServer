@@ -1,9 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
-import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.dtos.response.GroupSentRequestResponse;
+import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -12,10 +10,7 @@ import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
-import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
-import com.teamtobo.tobochatserver.services.RoomService;
-import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,13 +29,17 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService {
+    private final SocketIOServer socketIOServer;
+
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<GroupAcceptRequest> requestTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
     private final DynamoDbTable<Room> roomTable;
+
     private final RoomService roomService;
     private final ChatService chatService;
     private final UserService userService;
+    private final RoomMemberService roomMemberService;
 
     // Danh sách người được mời chưa chấp nhận
     @Override
@@ -143,6 +142,7 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
     // Thêm response type để cập nhật trực tiếp trên UI mà ko cần fetch lại
     @Override
     public RoomResponse respondInvite(String userId, String roomId, boolean accepted) {
+        if (!accepted) return null;
 
         String pk = "USER#" + userId;
         String sk = "ROOM_ACCEPT#" + roomId;
@@ -178,32 +178,40 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
         // Tăng memberCount
         room.setMemberCount(room.getMemberCount() + 1);
         tx.addUpdateItem(roomTable, room);
+        String now = Instant.now().toString();
 
-        if (accepted) {
-            String now = Instant.now().toString();
+        RoomMember member = RoomMember.builder()
+                .pk("ROOM#" + roomId)
+                .sk("MEMBER#" + userId)
+                .role(MemberRole.MEMBER)
+                .roomType(RoomType.GROUP)
+                .status(InboxStatus.ACTIVE)
+                .roomName(request.getRoomName())
+                .lastActivityAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .statusTime("STATUS#ACTIVE#TIME#" + now)
+                .build();
 
-            RoomMember member = RoomMember.builder()
-                    .pk("ROOM#" + roomId)
-                    .sk("MEMBER#" + userId)
-                    .role(MemberRole.MEMBER)
-                    .roomType(RoomType.GROUP)
-                    .status(InboxStatus.ACTIVE)
-                    .roomName(request.getRoomName())
-                    .lastActivityAt(now)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .statusTime("STATUS#ACTIVE#TIME#" + now)
-                    .build();
-
-            tx.addPutItem(roomMemberTable, member);
-        }
+        tx.addPutItem(roomMemberTable, member);
 
         tx.addDeleteItem(requestTable, key);
 
         try {
             enhancedClient.transactWriteItems(tx.build());
+            UserResponse newMember = userService.getUserProfile(userId);
 
-            if (!accepted) return null;
+            List<RoomMember> roomMembers = roomMemberService.findAllRoomMembers(roomId);
+            for(RoomMember rm: roomMembers) {
+                socketIOServer.getRoomOperations(rm.getMemberId())
+                            .sendEvent("new_member", RoomMemberResponse.builder()
+                                    .id(userId)
+                                    .roomId(roomId)
+                                    .role(MemberRole.MEMBER)
+                                    .member(newMember)
+                                    .build());
+            }
+
             return RoomResponse.builder()
                     .id(roomId)
                     .roomName(room.getRoomName())
