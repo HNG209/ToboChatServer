@@ -107,7 +107,7 @@ public class RoomController {
     @Operation(summary = "Thêm thành viên vào nhóm chat")
     @PostMapping("/{roomId}/members")
     @RequirePermission(MemberPermission.ADD_MEMBER)
-    @RequireAddToGroupEnabled
+    @RequireRoomMember
     public ResponseEntity<Void> addMembers(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,

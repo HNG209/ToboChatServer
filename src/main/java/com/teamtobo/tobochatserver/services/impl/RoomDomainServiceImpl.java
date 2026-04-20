@@ -139,6 +139,21 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         if (targetUser.isAllowAutoAddToGroup()) {
             addMember(roomId, targetUserId, room.getRoomName());
+            socketIOServer.getRoomOperations(targetUserId)
+                    .sendEvent("new_room", RoomResponse.builder()
+                            .id(roomId)
+                            .roomName(room.getRoomName())
+                            .roomType(room.getRoomType())
+                            .avatarUrl(room.getAvatarUrl())
+                            .allowAddMember(room.isAllowAddMember())
+                            .allowSendMessage(room.isAllowSendMessage())
+                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                            .approveMember(room.isApproveMember())
+                            .memberCount(room.getMemberCount())
+                            // Nếu phòng đã có tin nhắn trước đó
+                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                            .build());
         } else {
             createGroupAcceptRequest(roomId, adminId, targetUserId, room.getRoomName());
         }
@@ -167,8 +182,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         Room room = roomService.getRoomById(roomId, true);
         RoomMember inviter = getMember(roomId, inviterId);
         for (String targetUserId : targetUserIds) {
+            // Nếu không phải thành viên trong phòng
             if (isMember(roomId, targetUserId)) continue;
 
+            // Nếu không phải bạn bè của người mời
             validateFriend(inviterId, targetUserId);
             User targetUser = userService.getUserById(targetUserId);
             handleAddMember(room, inviter, targetUser, targetUserId);
@@ -526,7 +543,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // Kiểm tra và thêm các thành viên khác vào nhóm (tạo RoomMember hoặc GroupPendingRequest, GroupAcceptRequest)
     // Chỉ sử dụng cho roomType = GROUP
     private void handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
-
         String roomId = room.getPk().replace("ROOM#", "");
         String inviterId = inviter.getMemberId();
         String roomName = room.getRoomName();

@@ -1,13 +1,19 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
-import lombok.Builder;
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.*;
+import lombok.experimental.FieldDefaults;
 
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@FieldDefaults(level = AccessLevel.PRIVATE)
 public class GroupPendingRequestResponse {
-    private String roomId;
-    private String roomName;
-    private String userId;       // người sẽ được add (B)
-    private String requesterId;  // người request add (A)
+    String roomId;
+    String roomName;
+
+    UserResponse user;
+    UserResponse requester;
 }
