@@ -319,11 +319,11 @@ public class UserServiceImpl implements UserService {
 
                             return FriendResponse.builder()
                                     .id(i.getSk())
-                                    .name(i.getName())
+                                    .name(user.getName())
                                     .inRoom(inRoom) // optional
                                     .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
-                                    .avatarUrl(i.getAvatarUrl())
-                                    .createdAt(i.getCreatedAt())
+                                    .avatarUrl(user.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt()) // ngày kết bạn
                                     .build();
                         }
                 ).toList())
