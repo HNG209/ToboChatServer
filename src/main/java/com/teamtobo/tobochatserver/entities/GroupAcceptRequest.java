@@ -24,12 +24,12 @@ public class GroupAcceptRequest extends BaseEntity { // Lời mời vào nhóm
     String groupRequestPk;
     String receiverSk;
 
-    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_GroupAcceptRequest")
+    @DynamoDbSecondaryPartitionKey(indexNames = "GSI_GroupSentRequest")
     public String getGroupRequestPk() {
         return groupRequestPk;
     }
 
-    @DynamoDbSecondarySortKey(indexNames = "GSI_GroupAcceptRequest")
+    @DynamoDbSecondarySortKey(indexNames = "GSI_GroupSentRequest")
     public String getReceiverSk() {
         return receiverSk;
     }

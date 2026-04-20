@@ -11,6 +11,6 @@ import lombok.experimental.FieldDefaults;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GroupSentRequestResponse { // lời mời vào nhóm
-    String roomId;
     UserResponse user;
+    UserResponse inviter;
 }

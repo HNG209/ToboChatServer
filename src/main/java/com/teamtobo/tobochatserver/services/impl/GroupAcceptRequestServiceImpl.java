@@ -42,11 +42,11 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
     private final ChatService chatService;
     private final UserService userService;
 
-    // Danh sách người được mời chưa chấp nhận (đảo ngược hàm dưới)
+    // Danh sách người được mời chưa chấp nhận
     @Override
     public PageResponse<GroupSentRequestResponse> getSentRequests(String roomId, String cursor, int limit) {
-        String gsiPartitionKey = "ROOM#" + roomId;
-        DynamoDbIndex<GroupAcceptRequest> index = requestTable.index("GSI_GroupAcceptRequest");
+        String gsiPartitionKey = "ROOM_ACCEPT#" + roomId;
+        DynamoDbIndex<GroupAcceptRequest> index = requestTable.index("GSI_GroupSentRequest");
         // pk: roomId
         // sk: userId
 
@@ -93,8 +93,8 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
         return PageResponse.<GroupSentRequestResponse>builder()
                 .items(firstPage.items().stream().map(
                         i -> GroupSentRequestResponse.builder()
-                                .roomId(i.getRoomId())
-                                .user(userService.getUserProfile(Helper.normalizeId(i.getSk())))
+                                .user(userService.getUserProfile(Helper.normalizeId(i.getPk())))
+                                .inviter(userService.getUserProfile(i.getInviterId()))
                                 .build()
                 ).toList())
                 .nextCursor(nextCursor)
