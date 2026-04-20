@@ -196,6 +196,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomMemberTable.deleteItem(target);
+        socketIOServer.getRoomOperations(removerId)
+                .sendEvent("member_removed", roomId);
     }
 
     @Override
@@ -227,9 +229,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     @Override
     public LeaveCheckResponse checkLeave(String userId, String roomId) {
+        Room room = roomService.getRoomById(roomId, false);
         RoomMember member = getMember(roomId, userId);
 
-        if(member.getRole() == MemberRole.ADMIN)
+        if(member.getRole() == MemberRole.ADMIN && room.getMemberCount() != 1)
             return LeaveCheckResponse.builder()
                     .canLeave(false)
                     .reason("TRANSFER_REQUIRED")
@@ -245,6 +248,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomMember member = getMember(roomId, userId);
         Room room = roomService.getRoomById(roomId, true);
 
+        if(room.getMemberCount() == 1){
+            disbandGroup(roomId);
+            return;
+        }
+
         room.setMemberCount(room.getMemberCount() - 1);
         TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
 
@@ -253,6 +261,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         if (member.getRole() == MemberRole.ADMIN) {
             if(newAdminId == null)
                 throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+
+            if(newAdminId.equals(userId))
+                throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+
             RoomMember newAdmin = getMember(roomId, newAdminId);
 
             if (newAdmin == null)

@@ -181,7 +181,7 @@ public class RoomController {
     @Operation(summary = "Xoá thành viên ra khỏi nhóm")
     @DeleteMapping("/{roomId}/members/{memberId}")
     @RequirePermission(MemberPermission.REMOVE_MEMBER)
-    public ResponseEntity<Void> removeMember (
+    public ResponseEntity<Void> removeMember(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @PathVariable String memberId
@@ -191,7 +191,7 @@ public class RoomController {
     }
 
     @Operation(summary = "Kiểm tra trạng thái trước khi rời nhóm")
-    @GetMapping("/{roomId}/leave-check")
+    @PostMapping("/{roomId}/leave-check")
     @RequireRoomMember
     public ApiResponse<LeaveCheckResponse> checkLeave(
             @AuthenticationPrincipal Jwt jwt,
@@ -209,7 +209,7 @@ public class RoomController {
     public ResponseEntity<Void> leaveGroup(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
-            @RequestParam String newAdminId) {
+            @RequestParam(required = false) String newAdminId) {
         String userId = jwt.getSubject();
         roomDomainService.leaveGroup(userId, roomId, newAdminId);
         return ResponseEntity.noContent().build();

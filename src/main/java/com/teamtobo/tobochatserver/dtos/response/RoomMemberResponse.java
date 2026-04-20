@@ -17,10 +17,9 @@ public class RoomMemberResponse {
     String id;
     MemberRole role;
     String roomName;
-    InboxStatus status;
     RoomType roomType;
-
-    //notification
-    int unreadMessages;
     String addedBy;
+
+    // Thông tin cá nhân (name, avatar)
+    UserResponse member;
 }

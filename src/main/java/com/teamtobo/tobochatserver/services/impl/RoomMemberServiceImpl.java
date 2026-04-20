@@ -89,9 +89,9 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                                 // Helper.normalizeId sẽ cắt tiền tố "MEMBER#" đi để trả về ID sạch
                                 .id(item.getMemberId())
                                 .role(item.getRole())
-                                .status(item.getStatus())
                                 .roomType(item.getRoomType())
                                 .addedBy(item.getAddedBy())
+                                .member(userService.getUserProfile(item.getMemberId()))
                                 .build()
                 ).toList())
                 .nextCursor(nextCursor)
@@ -406,6 +406,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     public RoomMemberResponse getMember(String memberId, String roomId) {
         RoomMember member = getMemberById(memberId, roomId);
         return RoomMemberResponse.builder()
+                .id(memberId)
                 .roomName(member.getRoomName())
                 .role(member.getRole())
                 .roomType(member.getRoomType())
