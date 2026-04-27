@@ -28,6 +28,9 @@ public class Room extends BaseEntity { // Room metadata
     boolean allowUpdateMetadata = true; // Cho phép sửa thông tin phòng chat
     boolean approveMember; // Phê duyệt khi vào phòng
 
+    int memberCount;
+    int pendingCount;
+
     @Override
     @DynamoDbPartitionKey
     public String getPk() {

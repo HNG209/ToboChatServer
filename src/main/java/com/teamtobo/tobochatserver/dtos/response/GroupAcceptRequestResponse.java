@@ -9,5 +9,6 @@ import lombok.Data;
 public class GroupAcceptRequestResponse {
     String roomId;
     String roomName;
-    String inviterId;
+    String avatarUrl;
+    UserResponse inviter;
 }

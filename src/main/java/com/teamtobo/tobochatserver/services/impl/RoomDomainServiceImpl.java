@@ -1,6 +1,12 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
+import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
@@ -9,14 +15,18 @@ import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
 import java.util.*;
@@ -26,30 +36,58 @@ import java.util.stream.Stream;
 @Service
 @AllArgsConstructor
 public class RoomDomainServiceImpl implements RoomDomainService {
+    private final SocketIOServer socketIOServer;
+
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<Room> roomTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
 
     private final UserService userService;
     private final RoomService roomService;
+    private final RoomMemberService roomMemberService;
+    private final ChatService chatService;
 
     private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
 
     // Tạo nhóm và add member
     @Override
-    public void createRoom(String userId, RoomCreateRequest request, RoomType roomType) {
+    public RoomResponse createRoom(String userId, RoomCreateRequest request, RoomType roomType) {
         List<String> members = prepareMembers(userId, request);
+        RoomResponse response = null;
 
         switch (roomType) {
-            case DM -> createDMRoom(userId, members);
-            case GROUP -> createGroupRoom(userId, request, members);
+            case DM -> response = createDMRoom(userId, members);
+            case GROUP -> response = createGroupRoom(userId, request, members);
         }
+        return response;
+    }
+
+    @Override
+    public void updateRoomSettings(String roomId, RoomUpdateRequest request) {
+        Room room = roomService.getRoomById(roomId, false);
+
+        if (request.getAllowSendMessage() != null) { // Cho phép gửi tin nhắn vào phòng
+            room.setAllowSendMessage(request.getAllowSendMessage());
+        }
+
+        if (request.getAllowAddMember() != null) { // Cho phép thêm thành viên vào phòng
+            room.setAllowAddMember(request.getAllowAddMember());
+        }
+
+        if (request.getAllowUpdateMetadata() != null) { // Cho phép cập nhật thông tin phòng
+            room.setAllowUpdateMetadata(request.getAllowUpdateMetadata());
+        }
+
+        if(request.getApproveMember() != null) { // Phê duyệt khi vào phòng
+            room.setApproveMember(request.getApproveMember());
+        }
+
+        roomTable.updateItem(room);
     }
 
     @Override
     public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
-
         Room room = roomService.getRoomById(roomId, true);
 
         //phải là group
@@ -60,12 +98,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         //group có bật duyệt không
         if (!room.isApproveMember()) {
             throw new AppException(ErrorCode.ROOM_NOT_REQUIRE_APPROVAL);
-        }
-
-        //check admin
-        RoomMember admin = getMember(roomId, adminId);
-        if (admin.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
         }
 
         String pk = "ROOM#" + roomId;
@@ -83,6 +115,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         groupPendingRequestTable.deleteItem(
                 Key.builder().partitionValue(pk).sortValue(sk).build()
         );
+
+        room.setPendingCount(room.getPendingCount() - 1);
+        roomTable.updateItem(room);
 
         //reject
         if (!accept) return;
@@ -104,69 +139,164 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         if (targetUser.isAllowAutoAddToGroup()) {
             addMember(roomId, targetUserId, room.getRoomName());
+            socketIOServer.getRoomOperations(targetUserId)
+                    .sendEvent("new_room", RoomResponse.builder()
+                            .id(roomId)
+                            .roomName(room.getRoomName())
+                            .roomType(room.getRoomType())
+                            .avatarUrl(room.getAvatarUrl())
+                            .allowAddMember(room.isAllowAddMember())
+                            .allowSendMessage(room.isAllowSendMessage())
+                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                            .approveMember(room.isApproveMember())
+                            .memberCount(room.getMemberCount())
+                            // Nếu phòng đã có tin nhắn trước đó
+                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                            .build());
         } else {
             createGroupAcceptRequest(roomId, adminId, targetUserId, room.getRoomName());
         }
     }
 
-    @Override
-    public void toggleApproveMember(String roomId, String userId) {
-
-        Room room = roomService.getRoomById(roomId, true);
-
-        RoomMember member = getMember(roomId, userId);
-        if (member.getRole() != MemberRole.ADMIN) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
-        boolean newValue = !room.isApproveMember();
-
-        // nếu đang bật mà muốn tắt thì check pending
-        if (room.isApproveMember() && !newValue) {
-            boolean hasPending = groupPendingRequestTable.query(
-                    QueryEnhancedRequest.builder()
-                            .queryConditional(
-                                    QueryConditional.sortBeginsWith(
-                                            Key.builder()
-                                                    .partitionValue("ROOM#" + roomId)
-                                                    .sortValue("PENDING#")
-                                                    .build()
-                                    )
-                            )
-                            .limit(1)
-                            .build()
-            ).items().stream().findAny().isPresent();
-
-            if (hasPending) {
-                throw new AppException(ErrorCode.CANNOT_DISABLE_APPROVAL_WHEN_PENDING);
-            }
-        }
-
-        room.setApproveMember(newValue);
-        roomTable.putItem(room);
-    }
+//    @Override
+//    public List<GroupAcceptRequest> getSentInvites(String roomId, String cursor, int limit) {
+//        DynamoDbIndex<GroupAcceptRequest> index = groupAcceptRequestTable.index("GSI_GroupAcceptRequest");
+//
+//        String partitionKeyValue = "ROOM_ACCEPT#" + roomId;
+//
+//        // 3. Tạo điều kiện truy vấn (Query: PK = partitionKeyValue)
+//        QueryConditional queryConditional = QueryConditional
+//                .keyEqualTo(Key.builder().partitionValue(partitionKeyValue).build());
+//
+//        // 4. Thực thi truy vấn và map kết quả ra List
+//        return index.query(queryConditional)
+//                .stream()
+//                .flatMap(page -> page.items().stream())
+//                .collect(Collectors.toList());
+//    }
 
     // Add member khi đã tạo nhóm
     @Override
     public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
-
         Room room = roomService.getRoomById(roomId, true);
-
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
         RoomMember inviter = getMember(roomId, inviterId);
-
         for (String targetUserId : targetUserIds) {
-
+            // Nếu không phải thành viên trong phòng
             if (isMember(roomId, targetUserId)) continue;
 
+            // Nếu không phải bạn bè của người mời
             validateFriend(inviterId, targetUserId);
-
             User targetUser = userService.getUserById(targetUserId);
-
             handleAddMember(room, inviter, targetUser, targetUserId);
+        }
+    }
+    @Override
+    public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
+        RoomMember targetMember = getMember(roomId, memberId);
+        targetMember.setRole(request.getMemberRole());
+        targetMember.setUpdatedAt(Instant.now().toString());
+        roomMemberTable.updateItem(targetMember);
+    }
+
+    @Override
+    public void removeMember(String roomId, String removerId, String memberId) {
+        RoomMember remover = getMember(roomId, removerId);
+        RoomMember target = getMember(roomId, memberId);
+
+        if (remover.getRole() == MemberRole.MEMBER) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        if (remover.getRole() == MemberRole.VICE_ADMIN && target.getRole() != MemberRole.MEMBER) {
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        }
+
+        roomMemberTable.deleteItem(target);
+        socketIOServer.getRoomOperations(removerId)
+                .sendEvent("member_removed", roomId);
+    }
+
+    @Override
+    public void disbandGroup(String roomId) {
+        List<RoomMember> members = roomMemberService.findAllRoomMembers(roomId);
+
+        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        txBuilder.addDeleteItem(roomTable, Key.builder()
+                .partitionValue("ROOM#" + roomId)
+                .sortValue("METADATA")
+                .build());
+
+        for (RoomMember member : members) {
+            txBuilder.addDeleteItem(roomMemberTable, member);
+        }
+
+        try {
+            enhancedClient.transactWriteItems(txBuilder.build());
+
+            for (RoomMember member: members) {
+                socketIOServer.getRoomOperations(Helper.normalizeId(member.getSk()))
+                        .sendEvent("room_disband", roomId);
+            }
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.ROOM_DISBAND_ERROR);
+        }
+    }
+
+    @Override
+    public LeaveCheckResponse checkLeave(String userId, String roomId) {
+        Room room = roomService.getRoomById(roomId, false);
+        RoomMember member = getMember(roomId, userId);
+
+        if(member.getRole() == MemberRole.ADMIN && room.getMemberCount() != 1)
+            return LeaveCheckResponse.builder()
+                    .canLeave(false)
+                    .reason("TRANSFER_REQUIRED")
+                    .build();
+
+        return LeaveCheckResponse.builder()
+                .canLeave(true)
+                .build();
+    }
+
+    @Override
+    public void leaveGroup(String userId, String roomId, String newAdminId) {
+        RoomMember member = getMember(roomId, userId);
+        Room room = roomService.getRoomById(roomId, true);
+
+        if(room.getMemberCount() == 1){
+            disbandGroup(roomId);
+            return;
+        }
+
+        room.setMemberCount(room.getMemberCount() - 1);
+        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        txBuilder.addUpdateItem(roomTable, room);
+
+        if (member.getRole() == MemberRole.ADMIN) {
+            if(newAdminId == null)
+                throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+
+            if(newAdminId.equals(userId))
+                throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+
+            RoomMember newAdmin = getMember(roomId, newAdminId);
+
+            if (newAdmin == null)
+                throw new AppException(ErrorCode.NOT_IN_ROOM);
+
+            newAdmin.setRole(MemberRole.ADMIN); // thay thế admin
+
+            txBuilder.addUpdateItem(roomMemberTable, newAdmin);
+        }
+
+        txBuilder.addDeleteItem(roomMemberTable, member);
+        try {
+            enhancedClient.transactWriteItems(txBuilder.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.CANNOT_LEAVE_ROOM);
         }
     }
 
@@ -196,7 +326,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         return roomId;
     }
-    private void createDMRoom(String userId, List<String> members) { // Tạo phòng DM
+    private RoomResponse createDMRoom(String userId, List<String> members) { // Tạo phòng DM
         if (members.size() != 2) {
             throw new AppException(ErrorCode.ROOM_INVALID);
         }
@@ -205,7 +335,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         String roomId = sorted.get(0) + "_" + sorted.get(1);
 
         Room existed = roomService.getRoomById(roomId, true);
-        if (existed != null) return;
+        if (existed != null)
+            return RoomResponse.builder()
+                    .id(roomId)
+                    .roomType(existed.getRoomType())
+                    .createdAt(existed.getCreatedAt())
+                .build();
 
         String now = Instant.now().toString();
         String pk = "ROOM#" + roomId;
@@ -256,35 +391,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         ));
 
         enhancedClient.transactWriteItems(tx.build());
+
+        // Cập nhật real time cho người bên kia (otherId)
+        RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
+        otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
+        socketIOServer.getRoomOperations(otherId)
+                .sendEvent("new_room", otherRoomMetadata);
+
+        RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
+        myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        return myRoomMetadata;
     }
 
-//    private void createDMRoom(String userId, List<String> members) {
-//        // validate
-//        if (members.size() != 2) {
-//            throw new AppException(ErrorCode.ROOM_INVALID);
-//        }
-//
-//        // deterministic ID
-//        List<String> sorted = members.stream().sorted().toList();
-//        String roomId = sorted.get(0) + "_" + sorted.get(1);
-//
-//        // check tồn tại
-//        Room existed = roomService.getRoomById(roomId, true);
-//        if (existed != null) return;
-//
-//        String now = Instant.now().toString();
-//
-//        saveRoomToDynamoDB(
-//                userId,
-//                roomId,
-//                "Direct Message",
-//                RoomType.DM,
-//                sorted,
-//                now
-//        );
-//    }
-
-    private void createGroupRoom(String userId, RoomCreateRequest request, List<String> members) {
+    private RoomResponse createGroupRoom(String userId, RoomCreateRequest request, List<String> members) {
 
         // validate
         if (members.size() < 2) {
@@ -303,7 +422,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 userId,
                 roomId,
                 request.getRoomName(),
-                RoomType.GROUP,
                 List.of(userId),
                 now
         );
@@ -323,6 +441,17 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             handleAddMember(room, creator, targetUser, memberId);
         }
+
+        return RoomResponse.builder()
+                .id(roomId)
+                .roomName(room.getRoomName())
+                .roomType(room.getRoomType())
+                .avatarUrl(room.getAvatarUrl())
+                .allowAddMember(room.isAllowAddMember())
+                .allowSendMessage(room.isAllowSendMessage())
+                .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                .approveMember(room.isApproveMember())
+                .build();
     }
 
     private List<String> prepareMembers(String userId, RoomCreateRequest request) {
@@ -337,7 +466,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             String userId,
             String roomId,
             String roomName,
-            RoomType type,
             List<String> memberIds,
             String now
     ) {
@@ -352,16 +480,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .allowAddMember(true)
                 .allowUpdateMetadata(true)
                 .allowSendMessage(true)
-                .roomType(type)
+                .approveMember(false)
+                .roomType(RoomType.GROUP)
                 .createdAt(now)
                 .updatedAt(now)
+                .memberCount(memberIds.size())
+                .pendingCount(0)
                 .build();
 
         // Lưu metadata trước
         txBuilder.addPutItem(roomTable, roomMetadata);
 
         for (String memberId : memberIds) {
-            boolean isAdmin = (Objects.equals(memberId, userId) && type == RoomType.GROUP);
+            boolean isAdmin = Objects.equals(memberId, userId);
 
             String sk = "MEMBER#" + memberId;
 
@@ -372,11 +503,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                     .status(InboxStatus.ACTIVE)
                     .roomName(roomName)
                     .lastActivityAt(now)
-                    .roomType(type)
+                    .roomType(RoomType.GROUP)
                     .createdAt(now)
                     .updatedAt(now)
                     .statusTime("STATUS#ACTIVE#TIME#" + now)
-                    .addedBy(type == RoomType.GROUP ? userId : null)
+                    .addedBy(userId)
                     .build();
 
             txBuilder.addPutItem(roomMemberTable, member);
@@ -412,7 +543,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // Kiểm tra và thêm các thành viên khác vào nhóm (tạo RoomMember hoặc GroupPendingRequest, GroupAcceptRequest)
     // Chỉ sử dụng cho roomType = GROUP
     private void handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
-
         String roomId = room.getPk().replace("ROOM#", "");
         String inviterId = inviter.getMemberId();
         String roomName = room.getRoomName();
@@ -430,12 +560,31 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         // B có cho phép tự động thêm vào group?
         if (targetUser.isAllowAutoAddToGroup()) {
             addMember(roomId, targetUserId, roomName);
+
+            // Gửi socket để cập nhật lập tức inbox của người được add
+            // Chỉ gửi nếu người đó cho tự động thêm vào group
+            socketIOServer.getRoomOperations(targetUserId)
+                    .sendEvent("new_room", RoomResponse.builder()
+                            .id(roomId)
+                            .roomName(room.getRoomName())
+                            .roomType(room.getRoomType())
+                            .avatarUrl(room.getAvatarUrl())
+                            .allowAddMember(room.isAllowAddMember())
+                            .allowSendMessage(room.isAllowSendMessage())
+                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                            .approveMember(room.isApproveMember())
+                            .memberCount(room.getMemberCount())
+                            // Nếu phòng đã có tin nhắn trước đó
+                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                            .build());
         } else {
             createGroupAcceptRequest(roomId, inviterId, targetUserId, roomName);
         }
     }
 
-    private RoomMember getMember(String roomId, String userId) {
+    @Override
+    public RoomMember getMember(String roomId, String userId) {
         RoomMember member = roomMemberTable.getItem(
                 Key.builder()
                         .partitionValue("ROOM#" + roomId)
@@ -465,13 +614,21 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void addMember(String roomId, String userId, String roomName) {
+        TransactWriteItemsEnhancedRequest.Builder tx =
+                TransactWriteItemsEnhancedRequest.builder();
         String now = Instant.now().toString();
+        Room room = roomService.getRoomById(roomId, false);
+
+        room.setMemberCount(room.getMemberCount() + 1);
+
+        tx.addUpdateItem(roomTable, room);
 
         RoomMember member = RoomMember.builder()
                 .pk("ROOM#" + roomId)
                 .sk("MEMBER#" + userId)
                 .role(MemberRole.MEMBER)
                 .status(InboxStatus.ACTIVE)
+                .roomType(RoomType.GROUP)
                 .roomName(roomName)
                 .lastActivityAt(now)
                 .createdAt(now)
@@ -479,7 +636,13 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .statusTime("STATUS#ACTIVE#TIME#" + now)
                 .build();
 
-        roomMemberTable.putItem(member);
+        tx.addPutItem(roomMemberTable, member);
+
+        try {
+            enhancedClient.transactWriteItems(tx.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.ADD_MEMBER_ERROR);
+        }
     }
 
     private void createGroupAcceptRequest(String roomId, String inviterId, String targetUserId, String roomName) {
@@ -488,6 +651,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .pk("USER#" + targetUserId)
                         .sk("ROOM_ACCEPT#" + roomId)
                         .roomId(roomId)
+                        .groupRequestPk("ROOM_ACCEPT#" + roomId)
+                        .receiverSk("USER#" + targetUserId)
                         .inviterId(inviterId)
                         .roomName(roomName)
                         .build()
@@ -495,15 +660,28 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void createGroupPendingRequest(String roomId, String inviterId, String targetUserId, String roomName) {
-        groupPendingRequestTable.putItem(
-                GroupPendingRequest.builder()
-                        .pk("ROOM#" + roomId)
-                        .sk("PENDING#" + targetUserId)
-                        .roomId(roomId)
-                        .userId(targetUserId)
-                        .requesterId(inviterId)
-                        .roomName(roomName)
-                        .build()
-        );
+        TransactWriteItemsEnhancedRequest.Builder tx =
+                TransactWriteItemsEnhancedRequest.builder();
+
+        Room room = roomService.getRoomById(roomId, true);
+        room.setPendingCount(room.getPendingCount() + 1);
+        tx.addUpdateItem(roomTable, room);
+
+        GroupPendingRequest groupPendingRequest = GroupPendingRequest.builder()
+                .pk("ROOM#" + roomId)
+                .sk("PENDING#" + targetUserId)
+                .roomId(roomId)
+                .userId(targetUserId)
+                .requesterId(inviterId)
+                .roomName(roomName)
+                .build();
+
+        tx.addPutItem(groupPendingRequestTable, groupPendingRequest);
+
+        try {
+            enhancedClient.transactWriteItems(tx.build());
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.GROUP_PENDING_ERROR);
+        }
     }
 }

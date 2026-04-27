@@ -10,10 +10,7 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class GroupPendingRequestResponse {
-    String roomId;
-    String roomName;
-
+public class GroupSentRequestResponse { // lời mời vào nhóm
     UserResponse user;
-    UserResponse requester;
+    UserResponse inviter;
 }

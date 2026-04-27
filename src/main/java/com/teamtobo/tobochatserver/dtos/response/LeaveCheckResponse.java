@@ -10,10 +10,7 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class GroupPendingRequestResponse {
-    String roomId;
-    String roomName;
-
-    UserResponse user;
-    UserResponse requester;
+public class LeaveCheckResponse {
+    boolean canLeave;
+    String reason;
 }

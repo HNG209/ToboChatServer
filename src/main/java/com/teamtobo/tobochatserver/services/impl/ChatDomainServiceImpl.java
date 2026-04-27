@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -75,6 +76,16 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 }
 
                 roomId = roomDomainService.getOrCreateDMRoom(senderId, otherId);
+            }
+
+            // Nếu là GROUP thì check có cho gửi tin nhắn không
+            Room room = roomService.getRoomById(roomId, true);
+            if(room != null
+                    && room.getRoomType() == RoomType.GROUP
+                    && !room.isAllowSendMessage()) {
+                RoomMember currentMember = roomMemberService.getMemberById(senderId, roomId);
+                if(currentMember.getRole() == MemberRole.MEMBER)
+                    throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
 
             // sau đó lấy member lại

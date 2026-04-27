@@ -19,8 +19,14 @@ public class UserResponse {
     String email;
     String avatarUrl;
     String createdAt;
+
     FriendStatus friendStatus;
-    int totalUnreadMessages;
+
+    Integer totalUnreadMessages;
+    Integer friendRequestCount;
+    Integer groupRequestCount;
+
+    Boolean allowAutoAddToGroup;
     public String getId() {
         return Helper.normalizeId(this.id);
     }

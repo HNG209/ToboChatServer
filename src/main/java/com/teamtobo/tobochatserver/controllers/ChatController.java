@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
+import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
 import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
@@ -28,7 +29,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatController {
     private final ChatService chatService;
-    private final ChatDomainService chatDomainService;
     private final ChatRoomMemberService chatRoomMemberService;
 
     @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
@@ -49,9 +49,10 @@ public class ChatController {
 
     @Operation(summary = "Gửi message")
     @PostMapping("/rooms/{roomId}/messages")
+    @RequireRoomMember
     public ApiResponse<MessageResponse> sendMessage(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @RequestBody SendMessageRequest request) {
         String senderId = jwt.getSubject();
 

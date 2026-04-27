@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,13 +35,13 @@ public class GroupAcceptRequestController {
 
     @Operation(summary = "Phản hồi lời mời vào nhóm")
     @PutMapping("/{roomId}")
-    public ResponseEntity<Void> respondInvite(
+    public ApiResponse<RoomResponse> respondInvite(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @RequestParam(defaultValue = "true") boolean accepted
     ) {
-        groupAcceptRequestService.respondInvite(jwt.getSubject(), roomId, accepted);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<RoomResponse>builder()
+                .result(groupAcceptRequestService.respondInvite(jwt.getSubject(), roomId, accepted))
+                .build();
     }
-
 }

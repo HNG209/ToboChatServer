@@ -1,5 +1,8 @@
 package com.teamtobo.tobochatserver.utils;
 
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -21,5 +24,16 @@ public class Helper {
 
         Collections.sort(ids);
         return ids.get(0) + "_" + ids.get(1);
+    }
+    public static boolean isDMRoom(String roomId) {
+        if (roomId.contains("_")) {
+            String[] parts = roomId.split("_");
+
+            if (parts.length != 2) {
+                throw new AppException(ErrorCode.ROOM_INVALID);
+            }
+            return false;
+        }
+        return true;
     }
 }

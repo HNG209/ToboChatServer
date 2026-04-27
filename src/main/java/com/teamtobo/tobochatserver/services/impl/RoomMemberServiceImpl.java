@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Room;
@@ -25,10 +26,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,17 +36,67 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final RoomService roomService;
     private final UserService userService;
     private final ChatService chatService;
-
-    /**
-     * Lấy danh sách phòng đã tham gia của user với pagination
-     * @param userId
-     * @param cursor
-     * @param limit
-     * @return
-     */
-    // Deprecated
     private final DynamoDbClient lowLevelClient;
     private final SocketIOServer socketIOServer;
+
+    @Override
+    public PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit) {
+        if (roomId == null || roomId.trim().isEmpty()) {
+            return PageResponse.<RoomMemberResponse>builder().items(List.of()).build();
+        }
+
+        // 1. Xác định Partition Key và Sort Key Prefix cho Bảng chính
+        String pkValue = "ROOM#" + roomId;
+        String skPrefix = "MEMBER#";
+
+        // 2. Xây dựng Query Builder với điều kiện sortBeginsWith
+        QueryEnhancedRequest.Builder builder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(
+                        k -> k.partitionValue(pkValue).sortValue(skPrefix)
+                ))
+                .limit(limit);
+
+        // 3. Xử lý phân trang (Pagination)
+        if (cursor != null && !cursor.isEmpty()) {
+            Map<String, AttributeValue> exclusiveStartKey = new HashMap<>();
+            // Truy vấn trên Base Table chỉ cần đúng pk và sk
+            exclusiveStartKey.put("pk", AttributeValue.builder().s(pkValue).build());
+            exclusiveStartKey.put("sk", AttributeValue.builder().s(cursor).build());
+
+            builder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        // 4. Truy vấn trực tiếp trên Bảng chính (không dùng .index())
+        SdkIterable<Page<RoomMember>> results = roomMemberTable.query(builder.build());
+        Iterator<Page<RoomMember>> iterator = results.iterator();
+
+        if (!iterator.hasNext()) {
+            return PageResponse.<RoomMemberResponse>builder().items(List.of()).build();
+        }
+
+        Page<RoomMember> page = iterator.next();
+
+        // 5. Lấy cursor cho trang tiếp theo (chính là giá trị SK của thành viên cuối cùng)
+        String nextCursor = null;
+        if (page.lastEvaluatedKey() != null && page.lastEvaluatedKey().containsKey("sk")) {
+            nextCursor = page.lastEvaluatedKey().get("sk").s();
+        }
+
+        // 6. Map kết quả sang Response
+        return PageResponse.<RoomMemberResponse>builder()
+                .items(page.items().stream().map(
+                        item -> RoomMemberResponse.builder()
+                                // Helper.normalizeId sẽ cắt tiền tố "MEMBER#" đi để trả về ID sạch
+                                .id(item.getMemberId())
+                                .role(item.getRole())
+                                .roomType(item.getRoomType())
+                                .addedBy(item.getAddedBy())
+                                .member(userService.getUserProfile(item.getMemberId()))
+                                .build()
+                ).toList())
+                .nextCursor(nextCursor)
+                .build();
+    }
 
     @Override
     public void increaseUnreadCount(String senderId, String roomId) {
@@ -186,11 +234,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             Room room = roomService.getRoomById(i.getPk(), false);
             RoomResponse response = getRoomMetadata(userId, i.getPk());
             response.setLatestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())));
-//            RoomResponse.RoomResponseBuilder responseBuilder = RoomResponse.builder()
-//                    .id(i.getPk())
-//                    .latestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())))
-//                    .roomType(room.getRoomType())
-//                    .createdAt(i.getCreatedAt());
 
             if (room.getRoomType() == RoomType.DM) {
                 List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
@@ -205,19 +248,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                             });
                 }
             }
-//            else { // GROUP
-//                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//                if (memberIds.size() > 2) {
-//                    String groupName = memberIds.stream()
-//                            .limit(3)
-//                            .map(memberId -> userService.getUserProfile(memberId).getName())
-//                            .collect(Collectors.joining(", "));
-//                    responseBuilder.roomName(groupName);
-//                } else {
-//                    responseBuilder.roomName(i.getRoomName());
-//                }
-//            }
-//            return responseBuilder.build();
             return response;
         }).toList();
 
@@ -270,17 +300,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                         });
 
             }
-        } else { // GROUP
-//            List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-//            if (memberIds.size() > 2) {
-//                String groupName = memberIds.stream()
-//                        .limit(3)
-//                        .map(memberId -> userService.getUserProfile(memberId).getName())
-//                        .collect(Collectors.joining(", "));
-//                responseBuilder.roomName(groupName);
-//            } else {
-//                responseBuilder.roomName(i.getRoomName());
-//            }
         }
 
         return RoomResponse.builder()
@@ -288,6 +307,11 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .roomName(room.getRoomName())
                 .avatarUrl(room.getAvatarUrl())
                 .roomType(room.getRoomType())
+                .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                .allowSendMessage(room.isAllowSendMessage())
+                .allowAddMember(room.isAllowAddMember())
+                .approveMember(room.isApproveMember())
+                .memberCount(room.getMemberCount())
                 .unreadMessages(unreadCount)
                 .build();
     }
@@ -309,6 +333,23 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    @Override
+    public List<RoomMember> findAllRoomMembers(String roomId) {
+        String pk = "ROOM#" + roomId;
+
+        QueryConditional queryConditional = QueryConditional.sortBeginsWith(
+                Key.builder()
+                        .partitionValue(pk)
+                        .sortValue("MEMBER#")
+                        .build()
+        );
+
+        return roomMemberTable.query(r -> r.queryConditional(queryConditional))
+                .items()
+                .stream()
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -350,28 +391,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             roomMemberTable.putItem(newMember);
         }
     }
-  
-    @Override
-    public void updateMemberInbox(String roomId, String memberId, String now) {
-        Key key = Key.builder()
-                .partitionValue("ROOM#" + roomId)
-                .sortValue("MEMBER#" + memberId)
-                .build();
-
-        RoomMember member = roomMemberTable.getItem(key);
-
-        if (member != null) {
-            member.setUpdatedAt(now);
-//            member.setLastMessagePreview(lastMessagePreview);
-
-            // tính toán lại để GSI tự động sắp xếp
-            if (member.getStatus() != null) {
-                member.setStatusTime("STATUS#" + member.getStatus() + "#TIME#" + now);
-            }
-
-            roomMemberTable.updateItem(member);
-        }
-    }
 
     @Override
     public RoomMember getMemberById(String memberId, String roomId) {
@@ -381,6 +400,17 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build();
 
         return roomMemberTable.getItem(key);
+    }
+
+    @Override
+    public RoomMemberResponse getMember(String memberId, String roomId) {
+        RoomMember member = getMemberById(memberId, roomId);
+        return RoomMemberResponse.builder()
+                .id(memberId)
+                .roomName(member.getRoomName())
+                .role(member.getRole())
+                .roomType(member.getRoomType())
+                .build();
     }
 }
 

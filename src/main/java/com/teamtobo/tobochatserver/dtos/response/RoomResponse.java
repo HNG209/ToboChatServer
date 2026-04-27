@@ -19,8 +19,17 @@ public class RoomResponse {
     String avatarUrl;
     RoomType roomType;
     MessageResponse latestMessage;
-    String createdAt;
+
+    boolean allowAddMember;
+    boolean allowSendMessage;
+    boolean allowUpdateMetadata;
+    boolean approveMember;
+
+    int memberCount;
+    int pendingCount;
     int unreadMessages;
+
+    String createdAt;
 
     // Normalize id from pk
     public String getId() {

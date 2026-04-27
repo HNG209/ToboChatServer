@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
+import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
@@ -45,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+    private final DynamoDbTable<RoomMember> roomMemberTable;
     private final DynamoDbTable<User> userTable;
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
@@ -85,6 +87,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
                 .totalUnreadMessages(user.getTotalUnreadMessages())
+                .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                 .build();
     }
 
@@ -109,6 +112,11 @@ public class UserServiceImpl implements UserService {
                 && !request.getDob().equals(user.getDob())) {
 
             user.setDob(request.getDob());
+            isChanged = true;
+        }
+
+        if(request.getAllowAutoAddToGroup() != null) {
+            user.setAllowAutoAddToGroup(request.getAllowAutoAddToGroup());
             isChanged = true;
         }
 
@@ -245,6 +253,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public PageResponse<FriendResponse> getFriends(
             String userId,
+            String roomId, // optional param
             String cursor,
             int limit
     ) {
@@ -296,12 +305,27 @@ public class UserServiceImpl implements UserService {
 
         return PageResponse.<FriendResponse>builder()
                 .items(page.items().stream().map(
-                        i -> FriendResponse.builder()
-                                .id(i.getPk())
-                                .name(i.getName())
-                                .avatarUrl(i.getAvatarUrl())
-                                .createdAt(i.getCreatedAt())
-                                .build()
+                        i -> {
+                            Key key = Key.builder()
+                                    .partitionValue("ROOM#" + roomId)
+                                    .sortValue("MEMBER#" + Helper.normalizeId(i.getSk()))
+                                    .build();
+
+                            Boolean inRoom = null;
+                            if(roomId != null && !roomId.isEmpty())
+                                inRoom = roomMemberTable.getItem(key) != null;
+
+                            User user = getUserById(Helper.normalizeId(i.getSk()));
+
+                            return FriendResponse.builder()
+                                    .id(i.getSk())
+                                    .name(user.getName())
+                                    .inRoom(inRoom) // optional
+                                    .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
+                                    .avatarUrl(user.getAvatarUrl())
+                                    .createdAt(i.getCreatedAt()) // ngày kết bạn
+                                    .build();
+                        }
                 ).toList())
                 .nextCursor(nextCursor)
                 .build();

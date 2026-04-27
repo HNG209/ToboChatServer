@@ -69,6 +69,7 @@ public class UserController {
     @GetMapping("/me/friends")
     public ApiResponse<PageResponse<FriendResponse>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String roomId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
@@ -76,7 +77,7 @@ public class UserController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<FriendResponse>>builder()
-                .result(userService.getFriends(userId, cursor, limit))
+                .result(userService.getFriends(userId, roomId, cursor, limit))
                 .build();
     }
 
@@ -117,7 +118,6 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-
     @Operation(summary = "Lấy presigned URL ")
     @GetMapping("/avatar/upload-url")
     public PresignedUploadResponse getUploadUrl(
@@ -133,7 +133,4 @@ public class UserController {
 
         return userService.getAvatarUploadUrl(userId, contentType);
     }
-
-
-
 }

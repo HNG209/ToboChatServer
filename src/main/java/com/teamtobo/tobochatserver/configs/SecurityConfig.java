@@ -55,7 +55,7 @@ public class SecurityConfig {
         ));
 
         // Cho phép các method
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 
         // Cho phép các header (đặc biệt là Authorization để gửi Token)
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
