@@ -27,26 +27,6 @@ import java.lang.reflect.Method;
 @AllArgsConstructor
 public class RoomStatusAspect {
     private final RoomService roomService;
-    private final RoomMemberService roomMemberService;
-    private final RoomDomainService roomDomainService;
-
-    @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireAddToGroupEnabled)")
-    public Object checkAddToGroupEnabled (ProceedingJoinPoint joinPoint) throws Throwable {
-        String roomId = extractRoomId(joinPoint);
-        String userId = getCurrentUserId();
-
-        Room room = roomService.getRoomById(roomId, true);
-
-        if (room.getRoomType() != RoomType.GROUP)
-            throw new AppException(ErrorCode.ROOM_INVALID);
-
-        RoomMember inviter = roomDomainService.getMember(roomId, userId);
-
-        if(inviter.getRole() != MemberRole.ADMIN && !room.isAllowAddMember())
-            throw new AppException(ErrorCode.ADD_MEMBER_NOT_ALLOWED);
-
-        return joinPoint.proceed();
-    }
 
     @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireGroup)")
     public Object checkGroup (ProceedingJoinPoint joinPoint) throws Throwable {

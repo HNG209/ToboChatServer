@@ -75,7 +75,7 @@ public class RoomController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<RoomMemberResponse>builder()
-                .result(roomMemberService.getMember(userId, roomId))
+                .result(roomMemberService.getMyProfile(userId, roomId))
                 .build();
     }
 

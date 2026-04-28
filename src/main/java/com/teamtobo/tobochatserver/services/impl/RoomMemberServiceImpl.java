@@ -1,13 +1,11 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -411,6 +409,38 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .role(member.getRole())
                 .roomType(member.getRoomType())
                 .build();
+    }
+
+    @Override
+    public RoomMemberResponse getMyProfile(String userId, String roomId) {
+        RoomMemberResponse member = getMember(userId, roomId);
+        Room room = roomService.getRoomById(roomId, false);
+        MemberPermissionsResponse permissions = new MemberPermissionsResponse(); // mặc định false cho các quyền
+
+        // Nếu là admin thì cho phép update settings phòng và giải tán
+        if (member.getRole() == MemberRole.ADMIN) {
+            permissions.setCanUpdateRoomSettings(true);
+            permissions.setCanDisbandGroup(true);
+        }
+
+        // Duyệt thành viên nếu là trưởng hoặc phó nhóm
+        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN)
+            permissions.setCanApproveMember(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép thêm thành viên
+        if (member.getRole() != MemberRole.MEMBER || room.isAllowAddMember())
+            permissions.setCanAddMember(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép gửi tin nhắn
+        if (member.getRole() != MemberRole.MEMBER || room.getRoomType() == RoomType.DM || room.isAllowSendMessage())
+            permissions.setCanSendMessage(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép sửa thông tin phòng
+        if (member.getRole() != MemberRole.MEMBER || room.isAllowUpdateMetadata())
+            permissions.setCanUpdateMetadata(true);
+
+        member.setPermissions(permissions);
+        return member;
     }
 }
 
