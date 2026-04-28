@@ -213,7 +213,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomMemberTable.deleteItem(target);
-        socketIOServer.getRoomOperations(removerId)
+        socketIOServer.getRoomOperations(memberId)
                 .sendEvent("member_removed", roomId);
     }
 
