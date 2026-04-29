@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
@@ -17,6 +18,7 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -41,6 +43,8 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private final RoomDomainService roomDomainService;
     private final ChatService chatService;
     private final S3Client s3Client;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
@@ -87,9 +91,6 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 if(currentMember.getRole() == MemberRole.MEMBER)
                     throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
-
-            // sau đó lấy member lại
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
             // --- 2. XỬ LÝ ATTACHMENTS (PHẦN BỔ SUNG QUAN TRỌNG) ---
             List<Attachment> finalAttachments = new ArrayList<>();
@@ -142,31 +143,23 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             MessageResponse messageResponse = MessageResponse.builder()
                     .id(part)
+                    .tempId(request.getTempId())
                     .roomId(roomId)
                     .content(message.getContent())
                     .user(userService.getUserProfile(senderId))
                     .replyTo(chatService.getRoomMessage(senderId, roomId, request.getReplyTo()))
                     .attachments(finalAttachments) // Gửi URL sạch cho người nhận
                     .createdAt(now)
-                    .isSelf(false)
                     .build();
 
-            // 4. Upsert Inbox và Gửi Socket cho các member
-            for (String memberId : memberIds) {
-                InboxStatus inboxStatus = InboxStatus.ACTIVE;
+            // Gửi event ngay lập tức cho người dùng đang trong phòng
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("receive_message", messageResponse);
 
-                if (!memberId.equals(senderId) && roomId.contains("_")) {
-                    FriendStatus friendStatus = userService.getFriendStatus(senderId, memberId);
-                    inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
-                }
-
-                roomMemberService.upsertMemberInbox(roomId, memberId, inboxStatus, now);
-
-                if (memberId.equals(senderId)) continue;
-
-                socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("receive_message", messageResponse);
-            }
+            // async upsert + socket
+            eventPublisher.publishEvent(
+                    new InboxUpdateEvent(roomId, senderId, messageResponse)
+            );
 
             return messageResponse; // Chứa id thực tế của message đã lưu
         } catch (AppException e) {

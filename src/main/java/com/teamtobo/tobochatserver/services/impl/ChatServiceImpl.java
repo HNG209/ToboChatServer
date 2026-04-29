@@ -202,7 +202,6 @@ public class ChatServiceImpl implements ChatService {
                             .content(isRevoked ? null : msg.getContent())
                             .replyTo(!isRevoked && msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
                             .createdAt(msg.getCreatedAt())
-                            .isSelf(isSelf)
                             .user(userResponse)
                             .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
@@ -316,7 +315,6 @@ public class ChatServiceImpl implements ChatService {
                 .content(isRevoked ? "Tin nhắn đã được thu hồi" : content.toString())
                 .messageStatus(message.getMessageStatus())
                 .createdAt(message.getCreatedAt() != null ? message.getCreatedAt() : messageId)
-                .isSelf(message.getSenderId().equals(userId))
                 .build();
     }
 
@@ -471,7 +469,6 @@ public class ChatServiceImpl implements ChatService {
                                                 .createdAt(msg.getCreatedAt())
                                                 .attachments(msg.getAttachments())
                                                 .content(msg.getContent())
-                                                .isSelf(false)
                                                 .build());
                     }
                 }

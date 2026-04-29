@@ -20,6 +20,9 @@ public class SocketIOController {
         this.jwtDecoder = jwtDecoder;
         server.addConnectListener(onConnected());
         server.addDisconnectListener(onDisconnected());
+
+        server.addEventListener("join_room", String.class, (client, roomId, ackSender) -> client.joinRoom("room:" + roomId));
+        server.addEventListener("leave_room", String.class, (client, roomId, ackSender) -> client.leaveRoom("room:" + roomId));
     }
 
     private ConnectListener onConnected() {

@@ -17,6 +17,7 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MessageResponse {
     String id;
+    String tempId; // id trên FE generate tạm để optimistic update
     String roomId;
     String content;
     MessageResponse replyTo;
@@ -25,5 +26,4 @@ public class MessageResponse {
     MessageType messageType;
     MessageStatus messageStatus;
     String createdAt;
-    boolean isSelf; // nếu là message của chính mình
 }
