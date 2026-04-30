@@ -8,10 +8,7 @@ import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.*;
-import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
-import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
-import com.teamtobo.tobochatserver.entities.enums.MemberRole;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
@@ -159,37 +156,25 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
     }
 
-//    @Override
-//    public List<GroupAcceptRequest> getSentInvites(String roomId, String cursor, int limit) {
-//        DynamoDbIndex<GroupAcceptRequest> index = groupAcceptRequestTable.index("GSI_GroupAcceptRequest");
-//
-//        String partitionKeyValue = "ROOM_ACCEPT#" + roomId;
-//
-//        // 3. Tạo điều kiện truy vấn (Query: PK = partitionKeyValue)
-//        QueryConditional queryConditional = QueryConditional
-//                .keyEqualTo(Key.builder().partitionValue(partitionKeyValue).build());
-//
-//        // 4. Thực thi truy vấn và map kết quả ra List
-//        return index.query(queryConditional)
-//                .stream()
-//                .flatMap(page -> page.items().stream())
-//                .collect(Collectors.toList());
-//    }
-
     // Add member khi đã tạo nhóm
     @Override
     public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
         Room room = roomService.getRoomById(roomId, true);
         RoomMember inviter = getMember(roomId, inviterId);
+
         for (String targetUserId : targetUserIds) {
-            // Nếu không phải thành viên trong phòng
+            // Không thêm nếu đã thành viên trong phòng
             if (isMember(roomId, targetUserId)) continue;
 
             // Nếu không phải bạn bè của người mời
             validateFriend(inviterId, targetUserId);
             User targetUser = userService.getUserById(targetUserId);
-            handleAddMember(room, inviter, targetUser, targetUserId);
+            MemberStatus memberStatus = handleAddMember(room, inviter, targetUser, targetUserId);
         }
+
+        // Gửi event ngay lập tức cho những người đang trong phòng(online)
+        socketIOServer.getRoomOperations(roomId)
+                .sendEvent("new_members", targetUserIds);
     }
     @Override
     public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
@@ -542,7 +527,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     // Kiểm tra và thêm các thành viên khác vào nhóm (tạo RoomMember hoặc GroupPendingRequest, GroupAcceptRequest)
     // Chỉ sử dụng cho roomType = GROUP
-    private void handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
+    private MemberStatus handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
         String roomId = room.getPk().replace("ROOM#", "");
         String inviterId = inviter.getMemberId();
         String roomName = room.getRoomName();
@@ -553,7 +538,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             if (inviter.getRole() != MemberRole.ADMIN) {
                 // Thành viên thường thêm người thì phải chờ duyệt (Pending)
                 createGroupPendingRequest(roomId, inviterId, targetUserId, roomName);
-                return;
+                return MemberStatus.PENDING;
             }
         }
 
@@ -578,9 +563,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
                             // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                             .build());
-        } else {
-            createGroupAcceptRequest(roomId, inviterId, targetUserId, roomName);
+            return MemberStatus.ADDED;
         }
+
+        createGroupAcceptRequest(roomId, inviterId, targetUserId, roomName);
+        return MemberStatus.SENT;
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -16,7 +17,7 @@ public class FriendResponse {
     String name;
     String avatarUrl;
     String createdAt; // Ngày đồng ý kết bạn
-    Boolean inRoom; // Bạn bè tương đối với phòng hiện tại
+    MemberStatus memberStatus;
     boolean allowAutoAddToGroup;
     public String getId() {
         return Helper.normalizeId(this.id);

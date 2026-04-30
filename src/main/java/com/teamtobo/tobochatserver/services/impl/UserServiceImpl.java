@@ -4,12 +4,10 @@ import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
-import com.teamtobo.tobochatserver.entities.Friend;
-import com.teamtobo.tobochatserver.entities.FriendRequest;
-import com.teamtobo.tobochatserver.entities.RoomMember;
-import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -47,6 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
+    private final DynamoDbTable<GroupAcceptRequest> groupAcceptTable;
+    private final DynamoDbTable<GroupPendingRequest> groupPendingTable;
     private final DynamoDbTable<User> userTable;
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
@@ -311,16 +311,42 @@ public class UserServiceImpl implements UserService {
                                     .sortValue("MEMBER#" + Helper.normalizeId(i.getSk()))
                                     .build();
 
-                            Boolean inRoom = null;
-                            if(roomId != null && !roomId.isEmpty())
-                                inRoom = roomMemberTable.getItem(key) != null;
+                            Key acceptRequestKey = Key.builder()
+                                    .partitionValue("USER#" + Helper.normalizeId(i.getSk()))
+                                    .sortValue("ROOM_ACCEPT#" + roomId)
+                                    .build();
+
+                            Key pendingRequestKey = Key.builder()
+                                    .partitionValue("ROOM#" + roomId)
+                                    .sortValue("PENDING#" + Helper.normalizeId(i.getSk()))
+                                    .build();
+
+                            MemberStatus memberStatus = null;
+                            if (roomId != null && !roomId.isEmpty()) {
+                                // Trả về trạng thái hiện tại trong phòng
+                                // (SENT: đã gửi lời mời, PENDING: đang đợi duyệt, ADDED: đã thêm)
+                                // Mặc định là NOT_IN_GROUP
+                                memberStatus = MemberStatus.NOT_IN_GROUP;
+
+                                boolean inRoom = roomMemberTable.getItem(key) != null;
+                                if (inRoom)
+                                    memberStatus = MemberStatus.ADDED;
+
+                                boolean isSent = groupAcceptTable.getItem(acceptRequestKey) != null;
+                                if (isSent)
+                                    memberStatus = MemberStatus.SENT;
+
+                                boolean isPending = groupPendingTable.getItem(pendingRequestKey) != null;
+                                if (isPending)
+                                    memberStatus = MemberStatus.PENDING;
+                            }
 
                             User user = getUserById(Helper.normalizeId(i.getSk()));
 
                             return FriendResponse.builder()
                                     .id(i.getSk())
                                     .name(user.getName())
-                                    .inRoom(inRoom) // optional
+                                    .memberStatus(memberStatus) // optional
                                     .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                                     .avatarUrl(user.getAvatarUrl())
                                     .createdAt(i.getCreatedAt()) // ngày kết bạn
