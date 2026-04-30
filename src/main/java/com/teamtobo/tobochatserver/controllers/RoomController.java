@@ -17,6 +17,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Room Controller")
 @RestController
 @RequestMapping("/rooms")
@@ -109,15 +111,15 @@ public class RoomController {
     @PostMapping("/{roomId}/members")
     @RequirePermission(MemberPermission.ADD_MEMBER)
     @RequireRoomMember
-    public ResponseEntity<Void> addMembers(
+    public ApiResponse<List<FriendResponse>> addMembers(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @RequestBody AddMemberRequest request) {
 
         String inviterId = jwt.getSubject();
-        roomDomainService.addMemberToGroup(roomId, inviterId, request.getTargetUserIds());
-
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<List<FriendResponse>>builder()
+                .result(roomDomainService.addMemberToGroup(roomId, inviterId, request.getTargetUserIds()))
+                .build();
     }
 
     @Operation(summary = "Lấy danh sách pending request của nhóm")

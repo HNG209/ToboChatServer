@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
+import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
@@ -158,9 +159,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     // Add member khi đã tạo nhóm
     @Override
-    public void addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
+    public List<FriendResponse> addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds) {
         Room room = roomService.getRoomById(roomId, true);
         RoomMember inviter = getMember(roomId, inviterId);
+        List<FriendResponse> friendResponseList = new ArrayList<>();
 
         for (String targetUserId : targetUserIds) {
             // Không thêm nếu đã thành viên trong phòng
@@ -170,11 +172,17 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             validateFriend(inviterId, targetUserId);
             User targetUser = userService.getUserById(targetUserId);
             MemberStatus memberStatus = handleAddMember(room, inviter, targetUser, targetUserId);
+
+            FriendResponse friendResponse = FriendResponse.builder()
+                    .id(targetUserId)
+                    .memberStatus(memberStatus)
+                    .build();
+
+            friendResponseList.add(friendResponse);
         }
 
-        // Gửi event ngay lập tức cho những người đang trong phòng(online)
-        socketIOServer.getRoomOperations(roomId)
-                .sendEvent("new_members", targetUserIds);
+        // Trả về cho người thêm trạng thái của từng bạn bè khi đã thêm
+        return friendResponseList;
     }
     @Override
     public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
@@ -198,8 +206,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomMemberTable.deleteItem(target);
+
+        // Sự kiện cho người bị kick
         socketIOServer.getRoomOperations(memberId)
-                .sendEvent("member_removed", roomId);
+                .sendEvent("self_removed", roomId);
+
+        // Sự kiện cho các thành viên khác trong nhóm để cập nhật phòng
+        socketIOServer.getRoomOperations(roomId)
+                .sendEvent("member_removed", memberId);
     }
 
     @Override
