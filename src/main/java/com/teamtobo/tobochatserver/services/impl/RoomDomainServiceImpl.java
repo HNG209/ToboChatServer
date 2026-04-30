@@ -4,10 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
-import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -212,7 +209,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .sendEvent("self_removed", roomId);
 
         // Sự kiện cho các thành viên khác trong nhóm để cập nhật phòng
-        socketIOServer.getRoomOperations(roomId)
+        socketIOServer.getRoomOperations("room:" + roomId)
                 .sendEvent("member_removed", memberId);
     }
 
@@ -576,6 +573,18 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             // Nếu phòng đã có tin nhắn trước đó
                             .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
                             // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                            .build());
+
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("new_member", RoomMemberResponse.builder()
+                            .id(targetUserId)
+                            .roomId(roomId)
+                            .role(MemberRole.MEMBER)
+                            .member(UserResponse.builder()
+                                    .id(targetUserId)
+                                    .name(targetUser.getName())
+                                    .avatarUrl(targetUser.getAvatarUrl())
+                                    .build())
                             .build());
             return MemberStatus.ADDED;
         }
