@@ -1,0 +1,6 @@
+package com.teamtobo.tobochatserver.entities.enums;
+
+public enum UnreadUpdateType {
+    UPDATE,
+    RESET
+}

@@ -37,9 +37,8 @@ public class InboxEventHandler {
 
             for (String memberId : memberIds) {
                 InboxStatus inboxStatus = InboxStatus.ACTIVE;
-                if (memberId.equals(event.getSenderId())) continue;
 
-                if (event.getRoomId().contains("_")) {
+                if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
                     FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
                     inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
                 }
@@ -51,6 +50,8 @@ public class InboxEventHandler {
                         inboxStatus,
                         now
                 );
+
+                if (memberId.equals(event.getSenderId())) continue;
 
                 socketIOServer.getRoomOperations(memberId)
                         .sendEvent("inbox_updated", event.getMessage());

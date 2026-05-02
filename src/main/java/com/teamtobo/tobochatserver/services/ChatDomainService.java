@@ -8,5 +8,5 @@ import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 
 public interface ChatDomainService {
-    MessageResponse sendMessage(String senderId, String roomId, MessageType messageType, SendMessageRequest request);
+    MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request);
 }

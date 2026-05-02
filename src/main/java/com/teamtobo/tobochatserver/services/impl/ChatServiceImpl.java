@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
@@ -9,6 +10,7 @@ import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
@@ -21,6 +23,7 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Expression;
@@ -53,6 +56,7 @@ public class ChatServiceImpl implements ChatService {
     private final RoomService roomService;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
@@ -241,6 +245,10 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
         }
+
+        eventPublisher.publishEvent(
+                new UnreadMessageUpdateEvent(userId, roomId, UnreadUpdateType.RESET)
+        );
 
         return new PageResponse<>(messageResponses, nextCursor, prevCursor);
     }

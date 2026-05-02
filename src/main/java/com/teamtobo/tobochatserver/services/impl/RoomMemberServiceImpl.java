@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
@@ -12,6 +13,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
@@ -21,20 +23,22 @@ import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoomMemberServiceImpl implements RoomMemberService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
+    private final DynamoDbTable<User> userTable;
     private final RoomService roomService;
     private final UserService userService;
     private final ChatService chatService;
-    private final DynamoDbClient lowLevelClient;
+    private final DynamoDbClient dynamoDbClient;
     private final SocketIOServer socketIOServer;
 
     @Override
@@ -98,64 +102,72 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Override
     public void increaseUnreadCount(String senderId, String roomId) {
-        String cleanSenderId = Helper.normalizeId(senderId);
-        String cleanRoomId = Helper.normalizeId(roomId);
-
         List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
         for (String memberId: memberIds) {
             String cleanMemberId = Helper.normalizeId(memberId);
-            if (cleanMemberId.equals(cleanSenderId)) continue;
+            if (cleanMemberId.equals(senderId)) continue;
 
-            updateCounter(Map.of("pk", AttributeValue.builder().s("ROOM#" + cleanRoomId).build(),
-                        "sk", AttributeValue.builder().s("MEMBER#" + cleanMemberId).build()),
-                    "unreadMessages", 1);
-
-            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanMemberId).build(),
-                    "sk", AttributeValue.builder().s("PROFILE").build()),
-                    "totalUnreadMessages", 1);
-
+            updateRoomUnreadMessage(cleanMemberId, roomId);
+            updateTotalUnreadMessage(cleanMemberId, 1);
         }
-
     }
 
     @Override
-    public void markAsReadedMessage(String userId, String roomId) {
-        String cleanRoomId = Helper.normalizeId(roomId);
-        String cleanUserId = Helper.normalizeId(userId);
-
-        RoomMember member = roomMemberTable.getItem(Key.builder()
-                .partitionValue("ROOM#" + cleanRoomId)
-                .sortValue(("MEMBER#" + cleanUserId))
-                .build());
+    public void markAsReadMessage(String userId, String roomId) {
+        RoomMember member = getMemberById(userId, roomId);
 
         if (member != null && member.getUnreadMessages() > 0) {
             int countToReduce = member.getUnreadMessages();
 
-            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanUserId).build(),
-                    "sk", AttributeValue.builder().s("PROFILE").build()),
-                    "totalUnreadMessages", -countToReduce);
-
-            member.setUnreadMessages(0);
-            roomMemberTable.updateItem(member);
-
-            int updatedTotal = userService.getUserProfile(userId).getTotalUnreadMessages();
-            socketIOServer.getRoomOperations(userId).sendEvent("mark_read_update", Map.of(
-                    "roomId", roomId,
-                    "newTotalUnread", updatedTotal
-            ));
-
+            updateTotalUnreadMessage(userId, -countToReduce);
+            resetRoomUnreadMessage(userId, roomId);
         }
     }
 
-    private void updateCounter(Map<String, AttributeValue> key, String attributeName, int value) {
-        lowLevelClient.updateItem(u -> u.tableName("ToboChatTable")
-                .key(key)
-                .updateExpression("ADD " + attributeName + " :val")
-                .expressionAttributeValues(Map.of(":val", AttributeValue.builder()
-                        .n(String.valueOf(value))
-                        .build()))
-        );
+    // Cập nhật tổng tin nhắn chưa đọc
+    private void updateTotalUnreadMessage(String userId, int inc) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                        "sk", AttributeValue.builder().s("PROFILE").build()
+                ))
+                .updateExpression("SET totalUnreadMessages = if_not_exists(totalUnreadMessages, :zero) + :inc")
+                .expressionAttributeValues(Map.of(
+                        ":inc", AttributeValue.builder().n(String.valueOf(inc)).build(),
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
+    }
+
+    private void updateRoomUnreadMessage(String userId, String roomId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + userId).build()
+                ))
+                .updateExpression("SET unreadMessages = if_not_exists(unreadMessages, :zero) + :inc")
+                .expressionAttributeValues(Map.of(
+                        ":inc", AttributeValue.builder().n(String.valueOf(1)).build(),
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
+    }
+
+    private void resetRoomUnreadMessage(String userId, String roomId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + userId).build()
+                ))
+                .updateExpression("SET unreadMessages = :zero")
+                .expressionAttributeValues(Map.of(
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
     }
 
     @Override
@@ -352,43 +364,69 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
-        String pk = "ROOM#" + roomId;
-        String sk = "MEMBER#" + memberId;
-
-        Key key = Key.builder()
-                .partitionValue(pk)
-                .sortValue(sk)
-                .build();
-
-        // 1. Kiểm tra xem record đã tồn tại chưa
-        RoomMember member = roomMemberTable.getItem(key);
-
-        if (member != null) {
-            // Cập nhật
-            member.setUpdatedAt(now);
-
-            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
-            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
-            if (member.getStatus() != null) {
-                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
-            }
-
-            roomMemberTable.updateItem(member);
-
-        } else {
-            // Tạo mới
-            RoomMember newMember = RoomMember.builder()
-                    .pk(pk)
-                    .sk(sk)
-                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
-                    .build();
-
-            roomMemberTable.putItem(newMember);
-        }
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + memberId).build()
+                ))
+                .updateExpression("""
+                            SET updatedAt = :now,
+                                #status = if_not_exists(#status, :status),
+                                statusTime = :statusTime
+                        """)
+                .expressionAttributeNames(Map.of(
+                        "#status", "status"
+                ))
+                .expressionAttributeValues(Map.of(
+                        ":now", AttributeValue.builder().s(now).build(),
+                        ":status", AttributeValue.builder().s(status.name()).build(),
+                        ":statusTime", AttributeValue.builder()
+                                .s("STATUS#" + status.name() + "#TIME#" + now)
+                                .build()
+                ))
+                .build());
     }
+
+//    @Override
+//    public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
+//        String pk = "ROOM#" + roomId;
+//        String sk = "MEMBER#" + memberId;
+//
+//        Key key = Key.builder()
+//                .partitionValue(pk)
+//                .sortValue(sk)
+//                .build();
+//
+//        // 1. Kiểm tra xem record đã tồn tại chưa
+//        RoomMember member = roomMemberTable.getItem(key);
+//
+//        if (member != null) {
+//            System.out.println("update:" + member);
+//            // Cập nhật
+//            member.setUpdatedAt(now);
+//
+//            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
+//            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
+//            if (member.getStatus() != null) {
+//                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
+//            }
+//
+//            roomMemberTable.updateItem(member);
+//        } else {
+//            // Tạo mới
+//            RoomMember newMember = RoomMember.builder()
+//                    .pk(pk)
+//                    .sk(sk)
+//                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
+//                    .createdAt(now)
+//                    .updatedAt(now)
+//                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
+//                    .build();
+//
+//            roomMemberTable.putItem(newMember);
+//        }
+//    }
 
     @Override
     public RoomMember getMemberById(String memberId, String roomId) {

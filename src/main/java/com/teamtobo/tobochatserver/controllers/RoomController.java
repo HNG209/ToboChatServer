@@ -101,7 +101,7 @@ public class RoomController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId) {
         String userId = jwt.getSubject();
-        roomMemberService.markAsReadedMessage(userId, roomId);
+        roomMemberService.markAsReadMessage(userId, roomId);
         return ApiResponse.<Void>builder()
                 .message("Đã đánh dấu phòng là đã đọc")
                 .build();

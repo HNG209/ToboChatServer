@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
@@ -52,7 +53,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private String region;
 
     @Override
-    public MessageResponse sendMessage(String senderId, String roomId, MessageType messageType, SendMessageRequest request) {
+    public MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
@@ -84,11 +85,11 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             // Nếu là GROUP thì check có cho gửi tin nhắn không
             Room room = roomService.getRoomById(roomId, true);
-            if(room != null
+            if (room != null
                     && room.getRoomType() == RoomType.GROUP
                     && !room.isAllowSendMessage()) {
                 RoomMember currentMember = roomMemberService.getMemberById(senderId, roomId);
-                if(currentMember.getRole() == MemberRole.MEMBER)
+                if (currentMember.getRole() == MemberRole.MEMBER)
                     throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
 
@@ -135,7 +136,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     .deletedByUserIds(new ArrayList<>())
                     .attachments(finalAttachments) // Sử dụng list đã qua xử lý S3
                     .messageStatus(MessageStatus.NORMAL)
-                    .messageType(messageType)
+                    .messageType(MessageType.USER)
                     .createdAt(now)
                     .build();
 
@@ -159,6 +160,10 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             // async upsert + socket
             eventPublisher.publishEvent(
                     new InboxUpdateEvent(roomId, senderId, messageResponse)
+            );
+
+            eventPublisher.publishEvent(
+                    new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE)
             );
 
             return messageResponse; // Chứa id thực tế của message đã lưu

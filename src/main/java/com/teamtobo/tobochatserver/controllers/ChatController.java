@@ -8,8 +8,8 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
-import com.teamtobo.tobochatserver.services.ChatRoomMemberService;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,7 +29,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatController {
     private final ChatService chatService;
-    private final ChatRoomMemberService chatRoomMemberService;
+    private final ChatDomainService chatDomainService;
 
     @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
     @GetMapping("/rooms/{roomId}/messages")
@@ -43,7 +43,7 @@ public class ChatController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<MessageResponse>>builder()
-                .result(chatRoomMemberService.getMessageAndMarkAsRead(userId, roomId, cursor, limit, direction))
+                .result(chatService.getMessages(userId, roomId, cursor, limit, direction))
                 .build();
     }
 
@@ -57,7 +57,7 @@ public class ChatController {
         String senderId = jwt.getSubject();
 
         return ApiResponse.<MessageResponse>builder()
-                .result(chatRoomMemberService.sendMessageAndIncreaseUnread(senderId, roomId, request))
+                .result(chatDomainService.sendMessage(senderId, roomId, request))
                 .build();
     }
 
