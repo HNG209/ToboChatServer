@@ -4,13 +4,13 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
-import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
+import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +34,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RoomMemberServiceImpl implements RoomMemberService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
-    private final DynamoDbTable<User> userTable;
     private final RoomService roomService;
     private final UserService userService;
     private final ChatService chatService;
     private final DynamoDbClient dynamoDbClient;
+    private final ActiveRoomManager activeRoomManager;
     private final SocketIOServer socketIOServer;
 
     @Override
@@ -104,15 +104,27 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     public void increaseUnreadCount(String senderId, String roomId) {
         List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
-        for (String memberId: memberIds) {
+        for (String memberId : memberIds) {
             String cleanMemberId = Helper.normalizeId(memberId);
             if (cleanMemberId.equals(senderId)) continue;
 
-            updateRoomUnreadMessage(cleanMemberId, roomId);
+            // Nếu user đang trong phòng thì không tăng unread nữa
+            if (activeRoomManager.isActive(cleanMemberId, roomId)) {
+                log.info("User {} is in room {}, ignore update unread", cleanMemberId, roomId);
+                continue;
+            }
+
+            socketIOServer.getRoomOperations(memberId)
+                    .sendEvent("unread_updated", roomId);
+
+            increaseRoomUnreadMessage(cleanMemberId, roomId);
             updateTotalUnreadMessage(cleanMemberId, 1);
         }
     }
 
+    // Mark as read
+    // 1. Reset số unread trong phòng
+    // 2. Trừ lượng unread đó ra khỏi user
     @Override
     public void markAsReadMessage(String userId, String roomId) {
         RoomMember member = getMemberById(userId, roomId);
@@ -125,7 +137,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         }
     }
 
-    // Cập nhật tổng tin nhắn chưa đọc
+    // Cập nhật tổng tin nhắn chưa đọc (tổng các tin nhắn chưa đọc của từng phòng)
     private void updateTotalUnreadMessage(String userId, int inc) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()
                 .tableName("ToboChatTable")
@@ -141,7 +153,8 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build());
     }
 
-    private void updateRoomUnreadMessage(String userId, String roomId) {
+    // Tăng số tin nhắn chưa đọc cho phòng của user
+    private void increaseRoomUnreadMessage(String userId, String roomId) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()
                 .tableName("ToboChatTable")
                 .key(Map.of(
@@ -156,6 +169,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build());
     }
 
+    // Reset số tin nhắn chưa đọc của 1 phòng
     private void resetRoomUnreadMessage(String userId, String roomId) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()
                 .tableName("ToboChatTable")
@@ -170,6 +184,9 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build());
     }
 
+    // Danh sách inbox của người dùng
+    // status = ACTIVE -> tin nhắn đã khi đã đồng ý kết bạn hoặc tin nhắn từ nhóm
+    // status = PENDING -> tin nhắn chờ, do người lạ chưa kết bạn gửi
     @Override
     public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status) {
         String gsiPartitionKey = "MEMBER#" + userId;
@@ -189,9 +206,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .scanIndexForward(false) // Mới nhất lên đầu
                 .limit(limit);
 
-        // ==========================================
-        // 1. GIẢI MÃ CURSOR TỪ FRONTEND (Decode Base64)
-        // ==========================================
         if (cursor != null && !cursor.isEmpty()) {
             try {
                 // Giải mã Base64 -> "ROOM#123_456||STATUS#ACTIVE#TIME#2026-04-12T14:18:19.904954Z"
@@ -222,9 +236,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             return PageResponse.<RoomResponse>builder().items(List.of()).build();
         }
 
-        // ==========================================
-        // 2. MÃ HÓA CURSOR CHO TRANG TIẾP THEO (Encode Base64)
-        // ==========================================
         String nextCursor = null;
         if (firstPage.lastEvaluatedKey() != null && !firstPage.lastEvaluatedKey().isEmpty()) {
             String lastPk = firstPage.lastEvaluatedKey().get("pk").s();
@@ -237,9 +248,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             nextCursor = Base64.getEncoder().encodeToString(rawNextCursor.getBytes(StandardCharsets.UTF_8));
         }
 
-        // ==========================================
-        // 3. MAP RESPONSE (Giữ nguyên logic của bạn)
-        // ==========================================
         List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
             Room room = roomService.getRoomById(i.getPk(), false);
             RoomResponse response = getRoomMetadata(userId, i.getPk());
@@ -362,6 +370,13 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .collect(Collectors.toList());
     }
 
+    // Tạo hoặc cập nhật Inbox, chuyển sang cơ chế partial update
+    // Nếu dùng update của enhanced client:
+    // Thread A: +1 unread → 6
+    // Thread B: update member → overwrite old snapshot (5)
+    // statusTime(quan trọng) dùng để sắp xếp thứ tự các inbox
+    // status = ACTIVE -> tin nhắn đã khi đã đồng ý kết bạn hoặc tin nhắn từ nhóm
+    // status = PENDING -> tin nhắn chờ, do người lạ chưa kết bạn gửi
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()

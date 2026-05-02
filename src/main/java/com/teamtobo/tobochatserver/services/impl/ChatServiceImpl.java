@@ -55,13 +55,10 @@ public class ChatServiceImpl implements ChatService {
     private final UserService userService;
     private final RoomService roomService;
     private final S3Presigner s3Presigner;
-    private final S3Client s3Client;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${aws.s3.bucketName}")
     private String bucketName;
-    @Value("${aws.region}")
-    private String region;
 
     @Override
     public MessageResponse getRoomMessage(String userId, String roomId, String messageId) {
@@ -196,7 +193,6 @@ public class ChatServiceImpl implements ChatService {
                 .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
-                    boolean isSelf = userId.equals(msg.getSenderId());
                     boolean isRevoked = msg.getMessageStatus() == MessageStatus.REVOKED;
                     UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
 
@@ -328,48 +324,6 @@ public class ChatServiceImpl implements ChatService {
 
     private boolean isDeletedForUser(Message msg, String userId) {
         return msg.getDeletedByUserIds() != null && msg.getDeletedByUserIds().contains(userId);
-    }
-
-    /**
-     * Hàm hỗ trợ cắt URL để lấy S3 Key chuẩn.
-     * Loại bỏ toàn bộ phần Domain và các tham số phía sau.
-     */
-    private String extractKeyFromUrl(String url) {
-        // Tìm vị trí của temp-drafts
-        int index = url.indexOf("temp-drafts");
-        if (index == -1) return url;
-
-        String key = url.substring(index);
-        // Loại bỏ query string nếu có (phần sau dấu ?)
-        if (key.contains("?")) {
-            key = key.split("\\?")[0];
-        }
-        return key;
-    }
-
-    /**
-     * Hàm Copy S3 có cơ chế đợi và thử lại (Retry)
-     */
-    private void copyS3ObjectWithRetry(String sourceKey, String destKey, int maxRetries) throws Exception {
-        int attempts = 0;
-        while (attempts < maxRetries) {
-            try {
-                s3Client.copyObject(CopyObjectRequest.builder()
-                        .sourceBucket(bucketName)
-                        .sourceKey(sourceKey)
-                        .destinationBucket(bucketName)
-                        .destinationKey(destKey)
-                        .build());
-                return; // Thành công thì thoát
-            } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
-                attempts++;
-                if (attempts >= maxRetries) throw e;
-
-                log.warn("S3 Key chưa sẵn sàng (404), đang thử lại lần {}... Key: {}", attempts, sourceKey);
-                // Đợi 500ms để S3 kịp index file vừa upload
-                Thread.sleep(500);
-            }
-        }
     }
 
     @Override
