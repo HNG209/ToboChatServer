@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -173,6 +174,42 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             log.error("Lỗi gửi tin nhắn phòng {}: {}", roomId, e.getMessage());
             throw new AppException(ErrorCode.UNCATEGORIZED);
         }
+    }
+
+    @Override
+    public void sendSystemMessage(String roomId, String actorId, SystemAction action, Map<String, String> metadata) {
+        String now = Instant.now().toString();
+        String messageId = UUID.randomUUID().toString();
+
+        Message systemMsg = Message.builder()
+                .pk("ROOM#" + roomId)
+                .sk("MSG#" + now + "#" + messageId)
+                .senderId(actorId) // Người thực hiện hành động (VD: Người đổi tên nhóm)
+                .action(action)
+                .messageType(MessageType.SYSTEM)
+                .messageStatus(MessageStatus.NORMAL)
+                .metadata(metadata) // Lưu trữ các biến số
+                .createdAt(now)
+                .build();
+
+        messageTable.putItem(systemMsg);
+
+        UserResponse actor = userService.getUserProfile(actorId);
+        MessageResponse messageResponse = MessageResponse.builder()
+                .id(now + "#" + messageId)
+                .user(actor)
+                .action(action)
+                .metadata(metadata)
+                .messageType(MessageType.SYSTEM)
+                .roomId(roomId)
+                .build();
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("receive_message", messageResponse);
+
+        eventPublisher.publishEvent(
+                new InboxUpdateEvent(roomId, actorId, messageResponse)
+        );
     }
 
     /**

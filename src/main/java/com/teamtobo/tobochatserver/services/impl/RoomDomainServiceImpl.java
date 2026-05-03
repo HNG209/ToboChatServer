@@ -1,6 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
@@ -12,6 +14,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
@@ -44,6 +47,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     // Tạo nhóm và add member
     @Override
@@ -586,6 +591,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                     .avatarUrl(targetUser.getAvatarUrl())
                                     .build())
                             .build());
+
+            // Tạo tin nhắn hệ thống
+            eventPublisher.publishEvent(
+                    new SystemMessageCreateEvent(roomId, inviterId, SystemAction.MEMBER_ADDED, null)
+            );
+
             return MemberStatus.ADDED;
         }
 

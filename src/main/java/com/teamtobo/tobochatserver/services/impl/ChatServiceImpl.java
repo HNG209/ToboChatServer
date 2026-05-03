@@ -205,6 +205,10 @@ public class ChatServiceImpl implements ChatService {
                             .user(userResponse)
                             .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
+                            // Trả về để xử lý tin nhắn hệ thống
+                            .messageType(msg.getMessageType())
+                            .action(msg.getAction())
+                            .metadata(msg.getMetadata())
                             .build();
                 }).collect(Collectors.toList());
 

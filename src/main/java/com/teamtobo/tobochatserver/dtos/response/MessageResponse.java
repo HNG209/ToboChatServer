@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @AllArgsConstructor
@@ -26,4 +28,8 @@ public class MessageResponse {
     MessageType messageType;
     MessageStatus messageStatus;
     String createdAt;
+
+    // Dành cho tin nhắn hệ thống
+    Map<String, String> metadata;
+    SystemAction action;
 }
