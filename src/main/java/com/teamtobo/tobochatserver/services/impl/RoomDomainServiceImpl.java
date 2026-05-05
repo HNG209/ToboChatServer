@@ -594,7 +594,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             // Tạo tin nhắn hệ thống
             eventPublisher.publishEvent(
-                    new SystemMessageCreateEvent(roomId, inviterId, SystemAction.MEMBER_ADDED, null)
+                    new SystemMessageCreateEvent(
+                            roomId,
+                            inviterId,
+                            SystemAction.MEMBER_ADDED,
+                            Map.of("newMemberId", targetUserId))
             );
 
             return MemberStatus.ADDED;
