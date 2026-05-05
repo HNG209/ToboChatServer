@@ -4,6 +4,7 @@ import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -12,6 +13,7 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -23,9 +25,18 @@ public class Message extends BaseEntity {
     String content;
     String senderId;
     String replyTo; // id của tin nhắn phản hồi
-    MessageType messageType;
+    MessageType messageType; // SYSTEM nếu là tin nhắn hệ thống
     MessageStatus messageStatus;
     List<Attachment> attachments;
+
+    // Lưu dữ liệu động cho tin nhắn hệ thống
+    // Ví dụ: {"targetUserId": "user_456", "newRoomName": "new room name 123"}
+    Map<String, String> metadata;
+    SystemAction action;
+
+    @DynamoDbAttribute("metadata")
+    public Map<String, String> getMetadata() { return metadata; }
+    public void setMetadata(Map<String, String> metadata) { this.metadata = metadata; }
 
     @DynamoDbAttribute("attachments")
     public List<Attachment> getAttachments() {

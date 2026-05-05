@@ -1,19 +1,19 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
+import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
@@ -23,12 +23,13 @@ import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoomMemberServiceImpl implements RoomMemberService {
@@ -36,7 +37,8 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final RoomService roomService;
     private final UserService userService;
     private final ChatService chatService;
-    private final DynamoDbClient lowLevelClient;
+    private final DynamoDbClient dynamoDbClient;
+    private final ActiveRoomManager activeRoomManager;
     private final SocketIOServer socketIOServer;
 
     @Override
@@ -100,66 +102,91 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Override
     public void increaseUnreadCount(String senderId, String roomId) {
-        String cleanSenderId = Helper.normalizeId(senderId);
-        String cleanRoomId = Helper.normalizeId(roomId);
-
         List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
-        for (String memberId: memberIds) {
+        for (String memberId : memberIds) {
             String cleanMemberId = Helper.normalizeId(memberId);
-            if (cleanMemberId.equals(cleanSenderId)) continue;
+            if (cleanMemberId.equals(senderId)) continue;
 
-            updateCounter(Map.of("pk", AttributeValue.builder().s("ROOM#" + cleanRoomId).build(),
-                        "sk", AttributeValue.builder().s("MEMBER#" + cleanMemberId).build()),
-                    "unreadMessages", 1);
+            // Nếu user đang trong phòng thì không tăng unread nữa
+            if (activeRoomManager.isActive(cleanMemberId, roomId)) {
+                log.info("User {} is in room {}, ignore update unread", cleanMemberId, roomId);
+                continue;
+            }
 
-            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanMemberId).build(),
-                    "sk", AttributeValue.builder().s("PROFILE").build()),
-                    "totalUnreadMessages", 1);
+            socketIOServer.getRoomOperations(memberId)
+                    .sendEvent("unread_updated", roomId);
 
+            increaseRoomUnreadMessage(cleanMemberId, roomId);
+            updateTotalUnreadMessage(cleanMemberId, 1);
         }
-
     }
 
+    // Mark as read
+    // 1. Reset số unread trong phòng
+    // 2. Trừ lượng unread đó ra khỏi user
     @Override
-    public void markAsReadedMessage(String userId, String roomId) {
-        String cleanRoomId = Helper.normalizeId(roomId);
-        String cleanUserId = Helper.normalizeId(userId);
-
-        RoomMember member = roomMemberTable.getItem(Key.builder()
-                .partitionValue("ROOM#" + cleanRoomId)
-                .sortValue(("MEMBER#" + cleanUserId))
-                .build());
+    public void markAsReadMessage(String userId, String roomId) {
+        RoomMember member = getMemberById(userId, roomId);
 
         if (member != null && member.getUnreadMessages() > 0) {
             int countToReduce = member.getUnreadMessages();
 
-            updateCounter(Map.of("pk", AttributeValue.builder().s("USER#" + cleanUserId).build(),
-                    "sk", AttributeValue.builder().s("PROFILE").build()),
-                    "totalUnreadMessages", -countToReduce);
-
-            member.setUnreadMessages(0);
-            roomMemberTable.updateItem(member);
-
-            int updatedTotal = userService.getUserProfile(userId).getTotalUnreadMessages();
-            socketIOServer.getRoomOperations(userId).sendEvent("mark_read_update", Map.of(
-                    "roomId", roomId,
-                    "newTotalUnread", updatedTotal
-            ));
-
+            updateTotalUnreadMessage(userId, -countToReduce);
+            resetRoomUnreadMessage(userId, roomId);
         }
     }
 
-    private void updateCounter(Map<String, AttributeValue> key, String attributeName, int value) {
-        lowLevelClient.updateItem(u -> u.tableName("ToboChatTable")
-                .key(key)
-                .updateExpression("ADD " + attributeName + " :val")
-                .expressionAttributeValues(Map.of(":val", AttributeValue.builder()
-                        .n(String.valueOf(value))
-                        .build()))
-        );
+    // Cập nhật tổng tin nhắn chưa đọc (tổng các tin nhắn chưa đọc của từng phòng)
+    private void updateTotalUnreadMessage(String userId, int inc) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                        "sk", AttributeValue.builder().s("PROFILE").build()
+                ))
+                .updateExpression("SET totalUnreadMessages = if_not_exists(totalUnreadMessages, :zero) + :inc")
+                .expressionAttributeValues(Map.of(
+                        ":inc", AttributeValue.builder().n(String.valueOf(inc)).build(),
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
     }
 
+    // Tăng số tin nhắn chưa đọc cho phòng của user
+    private void increaseRoomUnreadMessage(String userId, String roomId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + userId).build()
+                ))
+                .updateExpression("SET unreadMessages = if_not_exists(unreadMessages, :zero) + :inc")
+                .expressionAttributeValues(Map.of(
+                        ":inc", AttributeValue.builder().n(String.valueOf(1)).build(),
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
+    }
+
+    // Reset số tin nhắn chưa đọc của 1 phòng
+    private void resetRoomUnreadMessage(String userId, String roomId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + userId).build()
+                ))
+                .updateExpression("SET unreadMessages = :zero")
+                .expressionAttributeValues(Map.of(
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
+    }
+
+    // Danh sách inbox của người dùng
+    // status = ACTIVE -> tin nhắn đã khi đã đồng ý kết bạn hoặc tin nhắn từ nhóm
+    // status = PENDING -> tin nhắn chờ, do người lạ chưa kết bạn gửi
     @Override
     public PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status) {
         String gsiPartitionKey = "MEMBER#" + userId;
@@ -179,9 +206,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .scanIndexForward(false) // Mới nhất lên đầu
                 .limit(limit);
 
-        // ==========================================
-        // 1. GIẢI MÃ CURSOR TỪ FRONTEND (Decode Base64)
-        // ==========================================
         if (cursor != null && !cursor.isEmpty()) {
             try {
                 // Giải mã Base64 -> "ROOM#123_456||STATUS#ACTIVE#TIME#2026-04-12T14:18:19.904954Z"
@@ -212,9 +236,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             return PageResponse.<RoomResponse>builder().items(List.of()).build();
         }
 
-        // ==========================================
-        // 2. MÃ HÓA CURSOR CHO TRANG TIẾP THEO (Encode Base64)
-        // ==========================================
         String nextCursor = null;
         if (firstPage.lastEvaluatedKey() != null && !firstPage.lastEvaluatedKey().isEmpty()) {
             String lastPk = firstPage.lastEvaluatedKey().get("pk").s();
@@ -227,9 +248,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             nextCursor = Base64.getEncoder().encodeToString(rawNextCursor.getBytes(StandardCharsets.UTF_8));
         }
 
-        // ==========================================
-        // 3. MAP RESPONSE (Giữ nguyên logic của bạn)
-        // ==========================================
         List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
             Room room = roomService.getRoomById(i.getPk(), false);
             RoomResponse response = getRoomMetadata(userId, i.getPk());
@@ -352,45 +370,78 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .collect(Collectors.toList());
     }
 
+    // Tạo hoặc cập nhật Inbox, chuyển sang cơ chế partial update
+    // Nếu dùng update của enhanced client:
+    // Thread A: +1 unread → 6
+    // Thread B: update member → overwrite old snapshot (5)
+    // statusTime(quan trọng) dùng để sắp xếp thứ tự các inbox
+    // status = ACTIVE -> tin nhắn đã khi đã đồng ý kết bạn hoặc tin nhắn từ nhóm
+    // status = PENDING -> tin nhắn chờ, do người lạ chưa kết bạn gửi
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
-        String pk = "ROOM#" + roomId;
-        String sk = "MEMBER#" + memberId;
-
-        Key key = Key.builder()
-                .partitionValue(pk)
-                .sortValue(sk)
-                .build();
-
-        // 1. Kiểm tra xem record đã tồn tại chưa
-        RoomMember member = roomMemberTable.getItem(key);
-
-        if (member != null) {
-            // Cập nhật
-            member.setUpdatedAt(now);
-
-            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
-            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
-            if (member.getStatus() != null) {
-                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
-            }
-
-            roomMemberTable.updateItem(member);
-
-        } else {
-            // Tạo mới
-            RoomMember newMember = RoomMember.builder()
-                    .pk(pk)
-                    .sk(sk)
-                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
-                    .build();
-
-            roomMemberTable.putItem(newMember);
-        }
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + memberId).build()
+                ))
+                .updateExpression("""
+                            SET updatedAt = :now,
+                                #status = if_not_exists(#status, :status),
+                                statusTime = :statusTime
+                        """)
+                .expressionAttributeNames(Map.of(
+                        "#status", "status"
+                ))
+                .expressionAttributeValues(Map.of(
+                        ":now", AttributeValue.builder().s(now).build(),
+                        ":status", AttributeValue.builder().s(status.name()).build(),
+                        ":statusTime", AttributeValue.builder()
+                                .s("STATUS#" + status.name() + "#TIME#" + now)
+                                .build()
+                ))
+                .build());
     }
+
+//    @Override
+//    public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
+//        String pk = "ROOM#" + roomId;
+//        String sk = "MEMBER#" + memberId;
+//
+//        Key key = Key.builder()
+//                .partitionValue(pk)
+//                .sortValue(sk)
+//                .build();
+//
+//        // 1. Kiểm tra xem record đã tồn tại chưa
+//        RoomMember member = roomMemberTable.getItem(key);
+//
+//        if (member != null) {
+//            System.out.println("update:" + member);
+//            // Cập nhật
+//            member.setUpdatedAt(now);
+//
+//            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
+//            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
+//            if (member.getStatus() != null) {
+//                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
+//            }
+//
+//            roomMemberTable.updateItem(member);
+//        } else {
+//            // Tạo mới
+//            RoomMember newMember = RoomMember.builder()
+//                    .pk(pk)
+//                    .sk(sk)
+//                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
+//                    .createdAt(now)
+//                    .updatedAt(now)
+//                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
+//                    .build();
+//
+//            roomMemberTable.putItem(newMember);
+//        }
+//    }
 
     @Override
     public RoomMember getMemberById(String memberId, String roomId) {
@@ -411,6 +462,38 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .role(member.getRole())
                 .roomType(member.getRoomType())
                 .build();
+    }
+
+    @Override
+    public RoomMemberResponse getMyProfile(String userId, String roomId) {
+        RoomMemberResponse member = getMember(userId, roomId);
+        Room room = roomService.getRoomById(roomId, false);
+        MemberPermissionsResponse permissions = new MemberPermissionsResponse(); // mặc định false cho các quyền
+
+        // Nếu là admin thì cho phép update settings phòng và giải tán
+        if (member.getRole() == MemberRole.ADMIN) {
+            permissions.setCanUpdateRoomSettings(true);
+            permissions.setCanDisbandGroup(true);
+        }
+
+        // Duyệt thành viên nếu là trưởng hoặc phó nhóm
+        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN)
+            permissions.setCanApproveMember(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép thêm thành viên
+        if (member.getRole() != MemberRole.MEMBER || room.isAllowAddMember())
+            permissions.setCanAddMember(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép gửi tin nhắn
+        if (member.getRole() != MemberRole.MEMBER || room.getRoomType() == RoomType.DM || room.isAllowSendMessage())
+            permissions.setCanSendMessage(true);
+
+        // Nếu không phải là member hoặc phòng đã bật cho phép sửa thông tin phòng
+        if (member.getRole() != MemberRole.MEMBER || room.isAllowUpdateMetadata())
+            permissions.setCanUpdateMetadata(true);
+
+        member.setPermissions(permissions);
+        return member;
     }
 }
 

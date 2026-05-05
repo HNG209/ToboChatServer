@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.Room;
@@ -8,11 +9,13 @@ import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.*;
@@ -40,6 +43,8 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
     private final ChatService chatService;
     private final UserService userService;
     private final RoomMemberService roomMemberService;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     // Danh sách người được mời chưa chấp nhận
     @Override
@@ -211,6 +216,16 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
                                     .member(newMember)
                                     .build());
             }
+
+            // Tạo tin nhắn hệ thống
+            eventPublisher.publishEvent(
+                    new SystemMessageCreateEvent(
+                            roomId,
+                            userId,
+                            SystemAction.GROUP_INVITE_ACCEPTED,
+                            null
+                    )
+            );
 
             return RoomResponse.builder()
                     .id(roomId)

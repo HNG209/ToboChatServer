@@ -17,6 +17,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Room Controller")
 @RestController
 @RequestMapping("/rooms")
@@ -75,7 +77,7 @@ public class RoomController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<RoomMemberResponse>builder()
-                .result(roomMemberService.getMember(userId, roomId))
+                .result(roomMemberService.getMyProfile(userId, roomId))
                 .build();
     }
 
@@ -99,7 +101,7 @@ public class RoomController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId) {
         String userId = jwt.getSubject();
-        roomMemberService.markAsReadedMessage(userId, roomId);
+        roomMemberService.markAsReadMessage(userId, roomId);
         return ApiResponse.<Void>builder()
                 .message("Đã đánh dấu phòng là đã đọc")
                 .build();
@@ -109,15 +111,15 @@ public class RoomController {
     @PostMapping("/{roomId}/members")
     @RequirePermission(MemberPermission.ADD_MEMBER)
     @RequireRoomMember
-    public ResponseEntity<Void> addMembers(
+    public ApiResponse<List<FriendResponse>> addMembers(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @RequestBody AddMemberRequest request) {
 
         String inviterId = jwt.getSubject();
-        roomDomainService.addMemberToGroup(roomId, inviterId, request.getTargetUserIds());
-
-        return ResponseEntity.noContent().build();
+        return ApiResponse.<List<FriendResponse>>builder()
+                .result(roomDomainService.addMemberToGroup(roomId, inviterId, request.getTargetUserIds()))
+                .build();
     }
 
     @Operation(summary = "Lấy danh sách pending request của nhóm")

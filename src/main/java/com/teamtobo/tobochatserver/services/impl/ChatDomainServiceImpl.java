@@ -1,9 +1,12 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -17,6 +20,7 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -42,13 +46,15 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private final ChatService chatService;
     private final S3Client s3Client;
 
+    private final ApplicationEventPublisher eventPublisher;
+
     @Value("${aws.s3.bucketName}")
     private String bucketName;
     @Value("${aws.region}")
     private String region;
 
     @Override
-    public MessageResponse sendMessage(String senderId, String roomId, MessageType messageType, SendMessageRequest request) {
+    public MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request) {
         try {
             String now = Instant.now().toString();
             String messageId = UUID.randomUUID().toString();
@@ -80,16 +86,13 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             // Nếu là GROUP thì check có cho gửi tin nhắn không
             Room room = roomService.getRoomById(roomId, true);
-            if(room != null
+            if (room != null
                     && room.getRoomType() == RoomType.GROUP
                     && !room.isAllowSendMessage()) {
                 RoomMember currentMember = roomMemberService.getMemberById(senderId, roomId);
-                if(currentMember.getRole() == MemberRole.MEMBER)
+                if (currentMember.getRole() == MemberRole.MEMBER)
                     throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
-
-            // sau đó lấy member lại
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
 
             // --- 2. XỬ LÝ ATTACHMENTS (PHẦN BỔ SUNG QUAN TRỌNG) ---
             List<Attachment> finalAttachments = new ArrayList<>();
@@ -134,7 +137,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     .deletedByUserIds(new ArrayList<>())
                     .attachments(finalAttachments) // Sử dụng list đã qua xử lý S3
                     .messageStatus(MessageStatus.NORMAL)
-                    .messageType(messageType)
+                    .messageType(MessageType.USER)
                     .createdAt(now)
                     .build();
 
@@ -142,31 +145,27 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             MessageResponse messageResponse = MessageResponse.builder()
                     .id(part)
+                    .tempId(request.getTempId())
                     .roomId(roomId)
                     .content(message.getContent())
                     .user(userService.getUserProfile(senderId))
                     .replyTo(chatService.getRoomMessage(senderId, roomId, request.getReplyTo()))
                     .attachments(finalAttachments) // Gửi URL sạch cho người nhận
                     .createdAt(now)
-                    .isSelf(false)
                     .build();
 
-            // 4. Upsert Inbox và Gửi Socket cho các member
-            for (String memberId : memberIds) {
-                InboxStatus inboxStatus = InboxStatus.ACTIVE;
+            // Gửi event ngay lập tức cho người dùng đang trong phòng
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("receive_message", messageResponse);
 
-                if (!memberId.equals(senderId) && roomId.contains("_")) {
-                    FriendStatus friendStatus = userService.getFriendStatus(senderId, memberId);
-                    inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
-                }
+            // async upsert + socket
+            eventPublisher.publishEvent(
+                    new InboxUpdateEvent(roomId, senderId, messageResponse)
+            );
 
-                roomMemberService.upsertMemberInbox(roomId, memberId, inboxStatus, now);
-
-                if (memberId.equals(senderId)) continue;
-
-                socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("receive_message", messageResponse);
-            }
+            eventPublisher.publishEvent(
+                    new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE)
+            );
 
             return messageResponse; // Chứa id thực tế của message đã lưu
         } catch (AppException e) {
@@ -175,6 +174,42 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             log.error("Lỗi gửi tin nhắn phòng {}: {}", roomId, e.getMessage());
             throw new AppException(ErrorCode.UNCATEGORIZED);
         }
+    }
+
+    @Override
+    public void sendSystemMessage(String roomId, String actorId, SystemAction action, Map<String, String> metadata) {
+        String now = Instant.now().toString();
+        String messageId = UUID.randomUUID().toString();
+
+        Message systemMsg = Message.builder()
+                .pk("ROOM#" + roomId)
+                .sk("MSG#" + now + "#" + messageId)
+                .senderId(actorId) // Người thực hiện hành động (VD: Người đổi tên nhóm)
+                .action(action)
+                .messageType(MessageType.SYSTEM)
+                .messageStatus(MessageStatus.NORMAL)
+                .metadata(metadata) // Lưu trữ các biến số
+                .createdAt(now)
+                .build();
+
+        messageTable.putItem(systemMsg);
+
+        UserResponse actor = userService.getUserProfile(actorId);
+        MessageResponse messageResponse = MessageResponse.builder()
+                .id(now + "#" + messageId)
+                .user(actor)
+                .action(action)
+                .metadata(metadata)
+                .messageType(MessageType.SYSTEM)
+                .roomId(roomId)
+                .build();
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("receive_message", messageResponse);
+
+        eventPublisher.publishEvent(
+                new InboxUpdateEvent(roomId, actorId, messageResponse)
+        );
     }
 
     /**

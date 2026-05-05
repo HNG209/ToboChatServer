@@ -23,4 +23,7 @@ public class RoomMemberResponse {
 
     // Thông tin cá nhân (name, avatar)
     UserResponse member;
+
+    // Permission, chỉ trả về khi lấy thông tin của chính tôi trong phòng
+    MemberPermissionsResponse permissions;
 }
