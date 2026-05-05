@@ -216,6 +216,16 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         // Sự kiện cho các thành viên khác trong nhóm để cập nhật phòng
         socketIOServer.getRoomOperations("room:" + roomId)
                 .sendEvent("member_removed", memberId);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        removerId,
+                        SystemAction.MEMBER_REMOVED,
+                        Map.of("removedMemberId", memberId)
+                )
+        );
     }
 
     @Override
@@ -439,6 +449,16 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         Room room = roomService.getRoomById(roomId, true);
         RoomMember creator = getMember(roomId, userId);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.ROOM_CREATED,
+                        null
+                )
+        );
 
         // add members còn lại
         for (String memberId : members) {
