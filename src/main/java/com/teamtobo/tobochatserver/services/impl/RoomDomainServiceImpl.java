@@ -266,7 +266,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomMember member = getMember(roomId, userId);
         Room room = roomService.getRoomById(roomId, true);
 
-        if(room.getMemberCount() == 1){
+        if (room.getMemberCount() == 1) {
             disbandGroup(roomId);
             return;
         }
@@ -277,10 +277,10 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         txBuilder.addUpdateItem(roomTable, room);
 
         if (member.getRole() == MemberRole.ADMIN) {
-            if(newAdminId == null)
+            if (newAdminId == null)
                 throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
 
-            if(newAdminId.equals(userId))
+            if (newAdminId.equals(userId))
                 throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
 
             RoomMember newAdmin = getMember(roomId, newAdminId);
@@ -296,6 +296,16 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         txBuilder.addDeleteItem(roomMemberTable, member);
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
+
+            // Tạo tin nhắn hệ thống
+            eventPublisher.publishEvent(
+                    new SystemMessageCreateEvent(
+                            roomId,
+                            userId,
+                            SystemAction.MEMBER_LEFT,
+                            null
+                    )
+            );
         } catch (Exception e) {
             throw new AppException(ErrorCode.CANNOT_LEAVE_ROOM);
         }
