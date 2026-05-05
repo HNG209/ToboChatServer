@@ -198,6 +198,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     public void removeMember(String roomId, String removerId, String memberId) {
         RoomMember remover = getMember(roomId, removerId);
         RoomMember target = getMember(roomId, memberId);
+        User targetUser = userService.getUserById(memberId); // Lấy tên của người dùng bị xoá gán vào tin nhắn hệ thống
 
         if (remover.getRole() == MemberRole.MEMBER) {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
@@ -223,7 +224,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         roomId,
                         removerId,
                         SystemAction.MEMBER_REMOVED,
-                        Map.of("removedMemberId", memberId)
+                        Map.of("removedMemberId", memberId,
+                                "removedMemberName", targetUser.getName())
                 )
         );
     }
@@ -628,7 +630,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             roomId,
                             inviterId,
                             SystemAction.MEMBER_ADDED,
-                            Map.of("newMemberId", targetUserId))
+                            Map.of("newMemberId", targetUserId,
+                                    "newMemberName", targetUser.getName())) // Thông tin lịch sử, chấp nhận không nhất quán
             );
 
             return MemberStatus.ADDED;
