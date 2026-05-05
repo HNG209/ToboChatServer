@@ -24,3 +24,31 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/tobochat-server:latest
+
+  deploy-to-ec2:
+    needs: build-and-push-image # Bắt buộc chờ Job 1 chạy xong
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # 1. Tải bản cập nhật mới nhất từ Docker Hub
+            docker pull ${{ secrets.DOCKER_USERNAME }}/tobochat-server:latest
+            
+            # 2. Xóa vùng chứa cũ nếu có để tránh kẹt cổng (Bỏ qua lỗi nếu chưa có)
+            docker stop tobochat-backend || true
+            docker rm tobochat-backend || true
+            
+            # 3. Khởi chạy bản mới, nối file .env và mở cảng 8081, 8085
+            docker run -d --name tobochat-backend \
+              -p 8081:8081 \
+              -p 8085:8085 \
+              --env-file ~/.env \
+              ${{ secrets.DOCKER_USERNAME }}/tobochat-server:latest
+            
+            # 4. Dọn rác (xóa các image cũ để tránh t2.micro bị đầy ổ cứng)
+            docker image prune -af
