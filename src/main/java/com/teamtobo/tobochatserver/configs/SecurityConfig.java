@@ -51,6 +51,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000", // Next.js Web
                 "http://localhost:8081", // Expo Web (nếu có)
+                "https://tobochat-next.vercel.app",
                 "exp://*"                // Expo Mobile (Development)
         ));
 
