@@ -23,8 +23,8 @@ public class SocketIOConfig {
 
         config.setHostname("0.0.0.0");
         config.setPort(8085);
-        config.setOrigin("https://tobochat-next.vercel.app");
-//        config.setOrigin("*");
+//        config.setOrigin("https://tobochat-next.vercel.app");
+        config.setOrigin("*");
 
         config.setAuthorizationListener(handshakeData -> {
             String token = handshakeData.getSingleUrlParam("token");

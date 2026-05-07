@@ -20,6 +20,7 @@ public class RoomMemberResponse {
     String roomName;
     RoomType roomType;
     String addedBy;
+    InboxStatus status;
 
     // Thông tin cá nhân (name, avatar)
     UserResponse member;

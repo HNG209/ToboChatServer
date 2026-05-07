@@ -363,7 +363,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                     .id(roomId)
                     .roomType(existed.getRoomType())
                     .createdAt(existed.getCreatedAt())
-                .build();
+                    .build();
 
         String now = Instant.now().toString();
         String pk = "ROOM#" + roomId;
@@ -419,10 +419,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
         otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
         socketIOServer.getRoomOperations(otherId)
-                .sendEvent("new_room", otherRoomMetadata);
+                .sendEvent("new_room", Map.of(
+                        "room", otherRoomMetadata,
+                        "inboxStatus", receiverStatus
+                ));
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
         myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        socketIOServer.getRoomOperations(userId)
+                .sendEvent("new_room", Map.of(
+                        "room", myRoomMetadata,
+                        "inboxStatus", senderStatus
+                ));
+
         return myRoomMetadata;
     }
 
