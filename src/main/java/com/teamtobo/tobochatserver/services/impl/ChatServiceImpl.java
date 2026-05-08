@@ -69,11 +69,15 @@ public class ChatServiceImpl implements ChatService {
                 .build());
 
         if (message == null) return null;
+
+        boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
         return MessageResponse.builder()
                 .id(messageId)
                 .roomId(roomId)
                 .user(userService.getUserProfile(message.getSenderId()))
-                .content(message.getContent())
+                .attachments(isRevoked ? null : message.getAttachments())
+                .content(isRevoked ? null : message.getContent())
+                .messageStatus(message.getMessageStatus())
                 .createdAt(message.getCreatedAt())
                 .build();
     }
