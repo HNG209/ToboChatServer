@@ -268,5 +268,15 @@ public class RoomController {
         roomDomainService.updateRoomAvatar(roomId, request.getAvatarUrl());
         return ResponseEntity.noContent().build();
     }
+    @Operation(summary = "Cập nhật tên phòng")
+    @PatchMapping("/{roomId}/name")
+    @RequireAdmin
+    public ResponseEntity<Void> updateRoomName(
+            @RoomId @PathVariable String roomId,
+            @RequestBody RoomNameUpdateRequest request
+    ) {
+        roomDomainService.updateRoomName(roomId, request.getRoomName());
+        return ResponseEntity.noContent().build();
+    }
 
 }

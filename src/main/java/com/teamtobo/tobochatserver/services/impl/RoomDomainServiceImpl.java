@@ -777,4 +777,15 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         room.setAvatarUrl(avatarUrl);
         roomTable.updateItem(room);
     }
+    @Override
+    public void updateRoomName(String roomId, String roomName) {
+        Room room = roomService.getRoomById(roomId, false);
+
+        if (roomName == null || roomName.isBlank()) {
+            throw new AppException(ErrorCode.ROOM_NAME_INVALID);
+        }
+
+        room.setRoomName(roomName);
+        roomTable.updateItem(room);
+    }
 }
