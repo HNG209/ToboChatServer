@@ -767,4 +767,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.GROUP_PENDING_ERROR);
         }
     }
+
+    @Override
+    public void updateRoomAvatar(String roomId, String avatarUrl) {
+        Room room = roomService.getRoomById(roomId, false);
+        if (room == null) {
+            throw new AppException(ErrorCode.ROOM_NOT_FOUND);
+        }
+        room.setAvatarUrl(avatarUrl);
+        roomTable.updateItem(room);
+    }
 }

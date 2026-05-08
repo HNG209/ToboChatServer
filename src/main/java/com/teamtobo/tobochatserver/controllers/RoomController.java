@@ -6,6 +6,8 @@ import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -26,6 +28,7 @@ import java.util.List;
 public class RoomController {
     private final RoomMemberService roomMemberService;
     private final RoomDomainService roomDomainService;
+    private final RoomService roomService;
     private final GroupPendingRequestService groupPendingRequestService;
     private final GroupAcceptRequestService groupAcceptRequestService;
 
@@ -238,4 +241,32 @@ public class RoomController {
         roomDomainService.disbandGroup(roomId);
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "Lấy presigned URL để upload avatar phòng")
+    @GetMapping("/{roomId}/avatar/upload-url")
+    @RequireAdmin
+    public ApiResponse<PresignedUploadResponse> getRoomAvatarUploadUrl(
+            @RoomId @PathVariable String roomId,
+            @RequestParam String contentType) {
+        // Validate content type
+        if (!"image/jpeg".equals(contentType) && !"image/png".equals(contentType)
+            && !"image/jpg".equals(contentType) && !"image/webp".equals(contentType)
+            && !"image/gif".equals(contentType)) {
+            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
+        }
+        return ApiResponse.<PresignedUploadResponse>builder()
+                .result(roomService.getRoomAvatarUploadUrl(roomId, contentType))
+                .build();
+    }
+
+    @Operation(summary = "Cập nhật avatar phòng")
+    @PatchMapping("/{roomId}/avatar")
+    @RequireAdmin
+    public ResponseEntity<Void> updateRoomAvatar(
+            @RoomId @PathVariable String roomId,
+            @RequestBody RoomAvatarUpdateRequest request) {
+        roomDomainService.updateRoomAvatar(roomId, request.getAvatarUrl());
+        return ResponseEntity.noContent().build();
+    }
+
 }

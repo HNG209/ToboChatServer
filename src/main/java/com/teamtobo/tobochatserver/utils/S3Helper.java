@@ -58,8 +58,13 @@ public class S3Helper {
 
 
 
-    public PresignedUploadResponse generatePresignedUploadUrl(String userId, String contentType) {
-
+    /**
+     * Generate presigned upload URL for avatars (users and rooms)
+     * @param id user ID or room ID
+     * @param contentType image content type
+     * @param folder folder path (e.g., "avatars", "room-avatars")
+     */
+    public PresignedUploadResponse generatePresignedUploadUrl(String id, String contentType, String folder) {
         // Validate Content-Type
         Set<String> allowedTypes = Set.of(
                 "image/png",
@@ -79,7 +84,8 @@ public class S3Helper {
         if (extension.equals("jpeg")) extension = "jpg";
         if (extension.equals("svg+xml")) extension = "svg";
 
-        String key = "avatars/" + userId + "/" + UUID.randomUUID() + extension;
+        /* Generate key with format: folder/id/uuid.extension */
+        String key = folder + "/" + id + "/" + UUID.randomUUID() + "." + extension;
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
@@ -88,7 +94,7 @@ public class S3Helper {
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofMinutes(5))   // 5 phút là đẹp nhất theo checklist
+                .signatureDuration(Duration.ofMinutes(5))
                 .putObjectRequest(putObjectRequest)
                 .build();
 
@@ -98,4 +104,12 @@ public class S3Helper {
                 .url(presignedRequest.url().toString())
                 .build();
     }
+
+    /**
+     * Overload method for user avatar - defaults to "avatars" folder
+     */
+    public PresignedUploadResponse generatePresignedUploadUrl(String userId, String contentType) {
+        return generatePresignedUploadUrl(userId, contentType, "avatars");
+    }
 }
+

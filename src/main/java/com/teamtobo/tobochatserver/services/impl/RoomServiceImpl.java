@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
+import com.teamtobo.tobochatserver.dtos.response.PresignedUploadResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -12,6 +13,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
+import com.teamtobo.tobochatserver.utils.S3Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,8 @@ import static com.teamtobo.tobochatserver.utils.Helper.createDeterministicId;
 public class RoomServiceImpl implements RoomService {
     private final DynamoDbTable<Room> roomTable;
     private final DynamoDbTable<RoomMember> roomMemberTable;
+    private final S3Helper s3Helper;
+
     @Override
     public List<String> getMembersByRoomId(String roomId) {
         // 1. Tạo điều kiện truy vấn
@@ -65,5 +69,21 @@ public class RoomServiceImpl implements RoomService {
             throw new AppException(ErrorCode.ROOM_NOT_FOUND);
 
         return room;
+    }
+
+    @Override
+    public PresignedUploadResponse getRoomAvatarUploadUrl(String roomId, String contentType) {
+        // Validate room exists
+        Room room = getRoomById(roomId, false);
+        if (room == null) {
+            throw new AppException(ErrorCode.ROOM_NOT_FOUND);
+        }
+        // Validate content type
+        if (!"image/jpeg".equals(contentType) && !"image/png".equals(contentType)
+            && !"image/jpg".equals(contentType) && !"image/webp".equals(contentType)
+            && !"image/gif".equals(contentType)) {
+            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
+        }
+        return s3Helper.generatePresignedUploadUrl(roomId, contentType, "room-avatars");
     }
 }

@@ -26,4 +26,5 @@ public interface RoomDomainService {
     LeaveCheckResponse checkLeave(String userId, String roomId);
     void leaveGroup(String userId, String roomId, String newAdminId);
     RoomMember getMember(String roomId, String userId);
+    void updateRoomAvatar(String roomId, String avatarUrl);
 }
