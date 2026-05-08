@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.entities.enums;
 
 public enum SystemAction {
     ROOM_CREATED,      // Tạo nhóm
+    FRIEND_ACCEPTED,   // Đồng ý kết bạn
     MEMBER_ADDED,      // Thêm thành viên
     GROUP_INVITE_ACCEPTED, // Chấp nhận lời mời vào nhóm
     MEMBER_LEFT,       // Rời nhóm

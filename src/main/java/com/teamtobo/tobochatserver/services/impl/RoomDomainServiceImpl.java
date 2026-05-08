@@ -14,6 +14,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -31,6 +32,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @AllArgsConstructor
 public class RoomDomainServiceImpl implements RoomDomainService {
@@ -358,12 +360,26 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         String roomId = sorted.get(0) + "_" + sorted.get(1);
 
         Room existed = roomService.getRoomById(roomId, true);
-        if (existed != null)
+        if (existed != null) {
+            // Nếu phòng đã tồn tại thì cập nhật lại memberStatus thành ACTIVE
+            for(String memberId : members) {
+                RoomMember member = roomMemberService.getMemberById(memberId, roomId);
+                if (member.getStatus() == InboxStatus.PENDING)
+                    socketIOServer.getRoomOperations(memberId)
+                            .sendEvent("pending_inbox_updated", roomMemberService.getRoomMetadata(memberId, roomId));
+
+                log.info("Room {} existed, updating inbox status from {} to ACTIVE for user {}", roomId, member.getStatus(), memberId);
+                member.setStatus(InboxStatus.ACTIVE);
+
+                roomMemberTable.updateItem(member);
+            }
+
             return RoomResponse.builder()
                     .id(roomId)
                     .roomType(existed.getRoomType())
                     .createdAt(existed.getCreatedAt())
                     .build();
+        }
 
         String now = Instant.now().toString();
         String pk = "ROOM#" + roomId;
