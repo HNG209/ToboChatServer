@@ -1,8 +1,10 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
@@ -435,18 +437,18 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
         otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
         socketIOServer.getRoomOperations(otherId)
-                .sendEvent("new_room", Map.of(
-                        "room", otherRoomMetadata,
-                        "inboxStatus", receiverStatus
-                ));
+                .sendEvent("new_room", NewRoomPayload.builder()
+                        .room(otherRoomMetadata)
+                        .inboxStatus(receiverStatus)
+                        .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
         myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
         socketIOServer.getRoomOperations(userId)
-                .sendEvent("new_room", Map.of(
-                        "room", myRoomMetadata,
-                        "inboxStatus", senderStatus
-                ));
+                .sendEvent("new_room", NewRoomPayload.builder()
+                        .room(myRoomMetadata)
+                        .inboxStatus(senderStatus)
+                        .build());
 
         return myRoomMetadata;
     }
@@ -623,19 +625,22 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             // Gửi socket để cập nhật lập tức inbox của người được add
             // Chỉ gửi nếu người đó cho tự động thêm vào group
             socketIOServer.getRoomOperations(targetUserId)
-                    .sendEvent("new_room", RoomResponse.builder()
-                            .id(roomId)
-                            .roomName(room.getRoomName())
-                            .roomType(room.getRoomType())
-                            .avatarUrl(room.getAvatarUrl())
-                            .allowAddMember(room.isAllowAddMember())
-                            .allowSendMessage(room.isAllowSendMessage())
-                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
-                            .approveMember(room.isApproveMember())
-                            .memberCount(room.getMemberCount())
-                            // Nếu phòng đã có tin nhắn trước đó
-                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
-                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                    .sendEvent("new_room", NewRoomPayload.builder()
+                            .room(RoomResponse.builder()
+                                    .id(roomId)
+                                    .roomName(room.getRoomName())
+                                    .roomType(room.getRoomType())
+                                    .avatarUrl(room.getAvatarUrl())
+                                    .allowAddMember(room.isAllowAddMember())
+                                    .allowSendMessage(room.isAllowSendMessage())
+                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                                    .approveMember(room.isApproveMember())
+                                    .memberCount(room.getMemberCount())
+                                    // Nếu phòng đã có tin nhắn trước đó
+                                    .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                                    // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                                    .build())
+                            .inboxStatus(InboxStatus.ACTIVE)
                             .build());
 
             socketIOServer.getRoomOperations("room:" + roomId)
@@ -787,6 +792,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         SystemAction.ROOM_AVATAR_CHANGED,
                         null)
         );
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        null,
+                        avatarUrl
+                )
+        );
     }
 
     @Override
@@ -807,6 +820,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         userId,
                         SystemAction.ROOM_NAME_CHANGED,
                         Map.of("newRoomName", roomName)
+                )
+        );
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        roomName,
+                        null
                 )
         );
     }
