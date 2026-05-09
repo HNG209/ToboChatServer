@@ -4,12 +4,14 @@ import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
+import com.teamtobo.tobochatserver.entities.Message;
 
 import java.util.List;
 
 public interface ChatService {
     MessageResponse getRoomMessage(String userId, String roomId, String messageId);
     MessageResponse getMessage(String messageId, String roomId);
+    Message getMessageById(String messageId, String roomId);
     PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit, String direction);
     MessageResponse getLatestMessage(String userId, String roomId);
     void revokeMessage(String userId, String roomId, String messageId);

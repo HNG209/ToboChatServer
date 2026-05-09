@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
@@ -82,6 +83,7 @@ public class ChatServiceImpl implements ChatService {
                 .build();
     }
 
+    @Override
     public Message getMessageById(String messageId, String roomId) {
         Message message = messageTable.getItem(r -> r.key(
                 Key.builder()
@@ -395,58 +397,9 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public void forwardMessages(String userId, String fromRoomId, List<String> messageIds, List<String> toRoomIds) {
-        try {
-            String now = Instant.now().toString();
-            UserResponse userResponse = userService.getUserProfile(userId);
-            List<Message> originalMessages = messageIds.stream()
-                    .map(id -> getMessageById(id, fromRoomId))
-                    .filter(msg -> msg.getMessageStatus() != MessageStatus.REVOKED)
-                    .toList();
-
-            for (String toRoomId : toRoomIds) {
-                String toPk = "ROOM#" + toRoomId;
-                List<Message> newMessages = new ArrayList<>();
-                for (Message message : originalMessages) {
-                    String newId = UUID.randomUUID().toString();
-                    Message newMsg = Message.builder().pk(toPk)
-                            .sk("MSG#" + now + "#" + newId)
-                            .senderId(userId)
-                            .messageStatus(MessageStatus.NORMAL)
-                            .messageType(MessageType.FORWARDED)
-                            .content(message.getContent().isEmpty() ? null : message.getContent())
-                            .attachments(message.getAttachments())
-                            .createdAt(now)
-                            .build();
-
-                    newMessages.add(newMsg);
-                }
-                newMessages.forEach(messageTable::putItem);
-
-                List<String> members = roomService.getMembersByRoomId(toRoomId);
-                if (members == null) continue;
-
-                // TODO: xử lí trong hàng đợi
-                for (Message msg : newMessages) {
-                    for (String memberId : members) {
-                        if (memberId.equals(userId)) continue;
-                        // TODO: giải quyết code trùng lặp
-                        socketIOServer.getRoomOperations(memberId)
-                                .sendEvent("receive_message",
-                                        MessageResponse.builder()
-                                                .id(msg.getSk().replace("MSG#", ""))
-                                                .user(userResponse)
-                                                .roomId(toRoomId)
-                                                .createdAt(msg.getCreatedAt())
-                                                .attachments(msg.getAttachments())
-                                                .content(msg.getContent())
-                                                .build());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Không thể forward nhiều phòng", e);
-        }
+        eventPublisher.publishEvent(
+                new ForwardMessageEvent(userId, fromRoomId, toRoomIds, messageIds)
+        );
     }
 
     @Override

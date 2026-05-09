@@ -94,9 +94,16 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
 
-            // --- 2. XỬ LÝ ATTACHMENTS (PHẦN BỔ SUNG QUAN TRỌNG) ---
+            // Xử lý attachments
             List<Attachment> finalAttachments = new ArrayList<>();
-            if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+
+            // Nếu là tin nhắn chuyển tiếp thì không cần lưu xuống S3 nữa
+            if(request.getMessageType() == MessageType.FORWARDED)
+                finalAttachments = request.getAttachments();
+
+            if (request.getMessageType() != MessageType.FORWARDED
+                    && request.getAttachments() != null
+                    && !request.getAttachments().isEmpty()) {
                 for (Attachment att : request.getAttachments()) {
                     try {
                         // Trích xuất key cũ từ URL tạm (Presigned URL client upload lên)
