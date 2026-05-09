@@ -577,6 +577,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
     }
+
     private RoomMember buildMember(
             String roomId,
             String userId,
@@ -769,16 +770,27 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     @Override
-    public void updateRoomAvatar(String roomId, String avatarUrl) {
+    public void updateRoomAvatar(String userId, String roomId, String avatarUrl) {
         Room room = roomService.getRoomById(roomId, false);
         if (room == null) {
             throw new AppException(ErrorCode.ROOM_NOT_FOUND);
         }
+
         room.setAvatarUrl(avatarUrl);
         roomTable.updateItem(room);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.ROOM_AVATAR_CHANGED,
+                        null)
+        );
     }
+
     @Override
-    public void updateRoomName(String roomId, String roomName) {
+    public void updateRoomName(String userId, String roomId, String roomName) {
         Room room = roomService.getRoomById(roomId, false);
 
         if (roomName == null || roomName.isBlank()) {
@@ -787,5 +799,15 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         room.setRoomName(roomName);
         roomTable.updateItem(room);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.ROOM_NAME_CHANGED,
+                        Map.of("newRoomName", roomName)
+                )
+        );
     }
 }

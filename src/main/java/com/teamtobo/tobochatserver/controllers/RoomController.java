@@ -248,12 +248,6 @@ public class RoomController {
     public ApiResponse<PresignedUploadResponse> getRoomAvatarUploadUrl(
             @RoomId @PathVariable String roomId,
             @RequestParam String contentType) {
-        // Validate content type
-        if (!"image/jpeg".equals(contentType) && !"image/png".equals(contentType)
-            && !"image/jpg".equals(contentType) && !"image/webp".equals(contentType)
-            && !"image/gif".equals(contentType)) {
-            throw new AppException(ErrorCode.INVALID_AVATAR_URL);
-        }
         return ApiResponse.<PresignedUploadResponse>builder()
                 .result(roomService.getRoomAvatarUploadUrl(roomId, contentType))
                 .build();
@@ -261,21 +255,24 @@ public class RoomController {
 
     @Operation(summary = "Cập nhật avatar phòng")
     @PatchMapping("/{roomId}/avatar")
-    @RequireAdmin
     public ResponseEntity<Void> updateRoomAvatar(
+            @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @RequestBody RoomAvatarUpdateRequest request) {
-        roomDomainService.updateRoomAvatar(roomId, request.getAvatarUrl());
+        String userId = jwt.getSubject();
+        roomDomainService.updateRoomAvatar(userId, roomId, request.getAvatarUrl());
         return ResponseEntity.noContent().build();
     }
+
     @Operation(summary = "Cập nhật tên phòng")
     @PatchMapping("/{roomId}/name")
-    @RequireAdmin
     public ResponseEntity<Void> updateRoomName(
+            @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
             @RequestBody RoomNameUpdateRequest request
     ) {
-        roomDomainService.updateRoomName(roomId, request.getRoomName());
+        String userId = jwt.getSubject();
+        roomDomainService.updateRoomName(userId, roomId, request.getRoomName());
         return ResponseEntity.noContent().build();
     }
 

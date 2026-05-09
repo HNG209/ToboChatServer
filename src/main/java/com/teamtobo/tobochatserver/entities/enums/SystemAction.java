@@ -8,5 +8,5 @@ public enum SystemAction {
     MEMBER_LEFT,       // Rời nhóm
     MEMBER_REMOVED,    // Kick thành viên
     ROOM_NAME_CHANGED, // Đổi tên nhóm
-    AVATAR_CHANGED     // Đổi ảnh nhóm
+    ROOM_AVATAR_CHANGED     // Đổi ảnh nhóm
 }
