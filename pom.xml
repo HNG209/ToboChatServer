@@ -40,6 +40,13 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <!-- Source: https://mvnrepository.com/artifact/io.livekit/livekit-server -->
+        <dependency>
+            <groupId>io.livekit</groupId>
+            <artifactId>livekit-server</artifactId>
+            <version>0.10.1</version>
+            <scope>compile</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
