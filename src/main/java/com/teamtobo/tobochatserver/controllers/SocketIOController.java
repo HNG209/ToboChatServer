@@ -92,6 +92,30 @@ public class SocketIOController {
                 cursor = pageResponse.getNextCursor();
             } while (cursor != null);
         });
+
+        server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
+            String callerId = client.get("userId");
+            String roomId = data.getRoomId();
+
+            log.info("User [{}] đã hủy cuộc gọi ở phòng [{}]", callerId, roomId);
+
+            String cursor = null;
+            do {
+                PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
+
+                for (RoomMemberResponse member : pageResponse.getItems()) {
+                    String memberId = member.getId();
+
+                    if (memberId.equals(callerId)) continue;
+
+                    // Gửi tín hiệu tắt popup tới từng người
+                    server.getRoomOperations(memberId)
+                            .sendEvent("call_cancelled", data); // data chứa sẵn roomId
+                }
+
+                cursor = pageResponse.getNextCursor();
+            } while (cursor != null);
+        });
     }
 
     private ConnectListener onConnected() {
