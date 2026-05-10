@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -54,7 +55,10 @@ public class InboxEventHandler {
                 if (memberId.equals(event.getSenderId())) continue;
 
                 socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("inbox_updated", event.getMessage());
+                        .sendEvent("inbox_updated", Map.of(
+                                "message", event.getMessage(),
+                                "inboxStatus", inboxStatus
+                        ));
             }
 
         } catch (Exception e) {

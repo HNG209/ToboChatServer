@@ -90,6 +90,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                         item -> RoomMemberResponse.builder()
                                 // Helper.normalizeId sẽ cắt tiền tố "MEMBER#" đi để trả về ID sạch
                                 .id(item.getMemberId())
+                                .status(item.getStatus())
                                 .role(item.getRole())
                                 .roomType(item.getRoomType())
                                 .addedBy(item.getAddedBy())
@@ -102,24 +103,36 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Override
     public void increaseUnreadCount(String senderId, String roomId) {
-        List<String> memberIds = roomService.getMembersByRoomId(roomId);
+        String cursor = null;
+        do {
+            PageResponse<RoomMemberResponse> pageResponse = getRoomMembers(roomId, cursor, 10);
+            List<RoomMemberResponse> members = pageResponse.getItems();
 
-        for (String memberId : memberIds) {
-            String cleanMemberId = Helper.normalizeId(memberId);
-            if (cleanMemberId.equals(senderId)) continue;
+            for (RoomMemberResponse member : members) {
+                String cleanMemberId = Helper.normalizeId(member.getId());
+                if (cleanMemberId.equals(senderId)) continue;
 
-            // Nếu user đang trong phòng thì không tăng unread nữa
-            if (activeRoomManager.isActive(cleanMemberId, roomId)) {
-                log.info("User {} is in room {}, ignore update unread", cleanMemberId, roomId);
-                continue;
+                // Nếu đang có trạng thái là PENDING thì không update unread (tin nhắn chờ)
+                if (member.getStatus() == InboxStatus.PENDING) {
+                    log.info("Ignore update unread for user {}", cleanMemberId);
+                    continue;
+                }
+
+                // Nếu user đang trong phòng thì không tăng unread nữa
+                if (activeRoomManager.isActive(cleanMemberId, roomId)) {
+                    log.info("User {} is in room {}, ignore update unread", cleanMemberId, roomId);
+                    continue;
+                }
+
+                socketIOServer.getRoomOperations(member.getId())
+                        .sendEvent("unread_updated", roomId);
+
+                increaseRoomUnreadMessage(cleanMemberId, roomId);
+                updateTotalUnreadMessage(cleanMemberId, 1);
             }
 
-            socketIOServer.getRoomOperations(memberId)
-                    .sendEvent("unread_updated", roomId);
-
-            increaseRoomUnreadMessage(cleanMemberId, roomId);
-            updateTotalUnreadMessage(cleanMemberId, 1);
-        }
+            cursor = pageResponse.getNextCursor();
+        } while (cursor != null);
     }
 
     // Mark as read

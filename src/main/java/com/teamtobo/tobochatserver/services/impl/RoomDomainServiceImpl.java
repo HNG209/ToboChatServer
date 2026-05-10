@@ -1,8 +1,10 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
@@ -14,6 +16,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -31,6 +34,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @AllArgsConstructor
 public class RoomDomainServiceImpl implements RoomDomainService {
@@ -358,12 +362,26 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         String roomId = sorted.get(0) + "_" + sorted.get(1);
 
         Room existed = roomService.getRoomById(roomId, true);
-        if (existed != null)
+        if (existed != null) {
+            // Nếu phòng đã tồn tại thì cập nhật lại memberStatus thành ACTIVE
+            for(String memberId : members) {
+                RoomMember member = roomMemberService.getMemberById(memberId, roomId);
+                if (member.getStatus() == InboxStatus.PENDING)
+                    socketIOServer.getRoomOperations(memberId)
+                            .sendEvent("pending_inbox_updated", roomMemberService.getRoomMetadata(memberId, roomId));
+
+                log.info("Room {} existed, updating inbox status from {} to ACTIVE for user {}", roomId, member.getStatus(), memberId);
+                member.setStatus(InboxStatus.ACTIVE);
+
+                roomMemberTable.updateItem(member);
+            }
+
             return RoomResponse.builder()
                     .id(roomId)
                     .roomType(existed.getRoomType())
                     .createdAt(existed.getCreatedAt())
-                .build();
+                    .build();
+        }
 
         String now = Instant.now().toString();
         String pk = "ROOM#" + roomId;
@@ -419,10 +437,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
         otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
         socketIOServer.getRoomOperations(otherId)
-                .sendEvent("new_room", otherRoomMetadata);
+                .sendEvent("new_room", NewRoomPayload.builder()
+                        .room(otherRoomMetadata)
+                        .inboxStatus(receiverStatus)
+                        .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
         myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        socketIOServer.getRoomOperations(userId)
+                .sendEvent("new_room", NewRoomPayload.builder()
+                        .room(myRoomMetadata)
+                        .inboxStatus(senderStatus)
+                        .build());
+
         return myRoomMetadata;
     }
 
@@ -552,6 +579,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.ROOM_CREATE_ERROR);
         }
     }
+
     private RoomMember buildMember(
             String roomId,
             String userId,
@@ -597,19 +625,22 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             // Gửi socket để cập nhật lập tức inbox của người được add
             // Chỉ gửi nếu người đó cho tự động thêm vào group
             socketIOServer.getRoomOperations(targetUserId)
-                    .sendEvent("new_room", RoomResponse.builder()
-                            .id(roomId)
-                            .roomName(room.getRoomName())
-                            .roomType(room.getRoomType())
-                            .avatarUrl(room.getAvatarUrl())
-                            .allowAddMember(room.isAllowAddMember())
-                            .allowSendMessage(room.isAllowSendMessage())
-                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
-                            .approveMember(room.isApproveMember())
-                            .memberCount(room.getMemberCount())
-                            // Nếu phòng đã có tin nhắn trước đó
-                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
-                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                    .sendEvent("new_room", NewRoomPayload.builder()
+                            .room(RoomResponse.builder()
+                                    .id(roomId)
+                                    .roomName(room.getRoomName())
+                                    .roomType(room.getRoomType())
+                                    .avatarUrl(room.getAvatarUrl())
+                                    .allowAddMember(room.isAllowAddMember())
+                                    .allowSendMessage(room.isAllowSendMessage())
+                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                                    .approveMember(room.isApproveMember())
+                                    .memberCount(room.getMemberCount())
+                                    // Nếu phòng đã có tin nhắn trước đó
+                                    .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                                    // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                                    .build())
+                            .inboxStatus(InboxStatus.ACTIVE)
                             .build());
 
             socketIOServer.getRoomOperations("room:" + roomId)
@@ -741,5 +772,63 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         } catch (Exception e) {
             throw new AppException(ErrorCode.GROUP_PENDING_ERROR);
         }
+    }
+
+    @Override
+    public void updateRoomAvatar(String userId, String roomId, String avatarUrl) {
+        Room room = roomService.getRoomById(roomId, false);
+        if (room == null) {
+            throw new AppException(ErrorCode.ROOM_NOT_FOUND);
+        }
+
+        room.setAvatarUrl(avatarUrl);
+        roomTable.updateItem(room);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.ROOM_AVATAR_CHANGED,
+                        null)
+        );
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        null,
+                        avatarUrl
+                )
+        );
+    }
+
+    @Override
+    public void updateRoomName(String userId, String roomId, String roomName) {
+        Room room = roomService.getRoomById(roomId, false);
+
+        if (roomName == null || roomName.isBlank()) {
+            throw new AppException(ErrorCode.ROOM_NAME_INVALID);
+        }
+
+        room.setRoomName(roomName);
+        roomTable.updateItem(room);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.ROOM_NAME_CHANGED,
+                        Map.of("newRoomName", roomName)
+                )
+        );
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        roomName,
+                        null
+                )
+        );
     }
 }

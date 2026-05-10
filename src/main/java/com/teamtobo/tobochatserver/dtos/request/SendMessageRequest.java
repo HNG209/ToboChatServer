@@ -16,4 +16,5 @@ public class SendMessageRequest {
     String content;
     String replyTo;
     List<Attachment> attachments;
+    MessageType messageType;
 }

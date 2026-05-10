@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -50,6 +51,18 @@ public class UserController {
         PageResponse<UserResponse> user = userService.findByEmail(userId, email, cursor, limit);
         return ApiResponse.<PageResponse<UserResponse>>builder()
                 .result(user)
+                .build();
+    }
+
+    @Operation(summary = "Trạng thái bạn bè")
+    @GetMapping("/{otherId}/friend-status")
+    public ApiResponse<FriendStatus> getFriendStatus(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String otherId) {
+        String userId = jwt.getSubject();
+
+        return ApiResponse.<FriendStatus>builder()
+                .result(userService.getFriendStatus(userId, otherId))
                 .build();
     }
 

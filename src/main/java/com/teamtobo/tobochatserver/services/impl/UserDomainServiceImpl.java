@@ -1,17 +1,21 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomDomainService;
 import com.teamtobo.tobochatserver.services.UserDomainService;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -29,6 +33,7 @@ public class UserDomainServiceImpl implements UserDomainService {
     private final DynamoDbEnhancedClient enhancedClient;
     private final RoomDomainService roomDomainService;
     private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
     @Override
     public void responseFriendRequest(String userId, FriendAcceptRequest request) {
         // Định nghĩa các khóa để xác định Request cũ
@@ -83,6 +88,16 @@ public class UserDomainServiceImpl implements UserDomainService {
                         .memberIds(List.of(userId, request.getFromUser()))
                         .build(),
                 RoomType.DM
+        );
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        Helper.createDeterministicId(userId, request.getFromUser()),
+                        userId,
+                        SystemAction.FRIEND_ACCEPTED,
+                        null
+                )
         );
     }
 }
