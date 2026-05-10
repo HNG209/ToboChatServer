@@ -1,14 +1,13 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.UnreadFriendRequestUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.UserUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.*;
-import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
-import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
-import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
@@ -21,6 +20,7 @@ import com.teamtobo.tobochatserver.utils.S3Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -31,8 +31,10 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 import java.time.Instant;
 import java.util.*;
@@ -55,6 +57,9 @@ public class UserServiceImpl implements UserService {
     private final S3Helper s3Helper;
     private final CognitoHelper cognitoHelper;
     private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
+    private final DynamoDbClient dynamoDbClient;
+    private final ApplicationEventPublisher eventPublisher;
+    private final SocketIOServer socketIOServer;
 
     @Value("${aws.cognito.userPoolId}")
     private String userPoolId;
@@ -86,6 +91,8 @@ public class UserServiceImpl implements UserService {
                 .dob(user.getDob())
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
+                .friendRequestCount(user.getFriendRequestCount())
+                .groupRequestCount(user.getGroupRequestCount())
                 .totalUnreadMessages(user.getTotalUnreadMessages())
                 .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                 .build();
@@ -167,6 +174,8 @@ public class UserServiceImpl implements UserService {
                 .pk("USER#" + userId)
                 .sk("REQUEST#" + otherId)
                 .build();
+
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, UnreadUpdateType.UPDATE));
 
         friendRequestTable.putItem(friendRequest);
     }
@@ -468,6 +477,11 @@ public class UserServiceImpl implements UserService {
     }
 
     private PageResponse<FriendRequestResponse> getPendingRequests(String userId, String cursor, int limit) {
+        if (cursor == null || cursor.isEmpty()) {
+            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            log.info("Bắn event RESET badge cho user: {}", userId);
+        }
+
         String gsiPartitionKey = "REQUEST#" + userId;
         DynamoDbIndex<FriendRequest> index = friendRequestTable.index("GSI_FriendRequest");
 
@@ -619,5 +633,43 @@ public class UserServiceImpl implements UserService {
         return s3Helper.generatePresignedUploadUrl(userId, contentType);
     }
 
+    @Override
+    public void increaseFriendRequestCount(String userId) {
+        this.updateFriendRequestCount(userId, 1);
+        socketIOServer.getRoomOperations(userId).sendEvent("friend_request_unread_update", 1);
+        log.info("send unread friend request");
+    }
+
+    @Override
+    public void markReadFriendRequest(String userId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName("ToboChatTable")
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                        "sk", AttributeValue.builder().s("PROFILE").build()
+                ))
+                .updateExpression("SET friendRequestCount = :zero")
+                .expressionAttributeValues(Map.of(
+                        ":zero", AttributeValue.builder().n("0").build()
+                ))
+                .build());
+
+        socketIOServer.getRoomOperations(userId).sendEvent("friend_request_unread_reset", 1);
+    }
+
+    private void updateFriendRequestCount(String userId, int amount) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                        .tableName("ToboChatTable")
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                                "sk", AttributeValue.builder().s("PROFILE").build()
+                        ))
+                        .updateExpression("SET friendRequestCount = if_not_exists(friendRequestCount, :zero) + :inc")
+                        .expressionAttributeValues(Map.of(
+                                ":inc", AttributeValue.builder().n(String.valueOf(amount)).build(),
+                                ":zero", AttributeValue.builder().n("0").build()
+                        ))
+                .build());
+    }
 
 }

@@ -80,4 +80,15 @@ public class FriendRequestController {
                 ))
                 .build();
     }
+
+    @Operation(summary = "Đọc thông báo lời mời kết bạn")
+    @PatchMapping("/read")
+    public ApiResponse<Void> markReadFriendRequest (@AuthenticationPrincipal Jwt jwt) {
+        String userId = jwt.getSubject();
+        userService.markReadFriendRequest(userId);
+        return ApiResponse.<Void>builder()
+                .message("Đã xóa badge thông báo kết bạn")
+                .build();
+    }
+
 }
