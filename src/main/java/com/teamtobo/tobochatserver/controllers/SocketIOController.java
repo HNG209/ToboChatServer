@@ -8,9 +8,12 @@ import com.teamtobo.tobochatserver.dtos.events.CallRequestEvent;
 import com.teamtobo.tobochatserver.dtos.events.WidgetMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.request.CallRequest;
 import com.teamtobo.tobochatserver.dtos.response.CallResponse;
+import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.CallService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
+import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.services.handlers.CallSessionManager;
@@ -29,6 +32,7 @@ public class SocketIOController {
     private final UserService userService;
     private final CallService callService;
     private final RoomMemberService roomMemberService;
+    private final RoomService roomService;
     private final ActiveRoomManager activeRoomManager;
     private final CallSessionManager callSessionManager;
     private final JwtDecoder jwtDecoder;
@@ -39,6 +43,7 @@ public class SocketIOController {
                               UserService userService,
                               CallService callService,
                               RoomMemberService roomMemberService,
+                              RoomService roomService,
                               JwtDecoder jwtDecoder,
                               ActiveRoomManager activeRoomManager,
                               CallSessionManager callSessionManager,
@@ -46,6 +51,7 @@ public class SocketIOController {
         this.userService = userService;
         this.callService = callService;
         this.roomMemberService = roomMemberService;
+        this.roomService = roomService;
         this.activeRoomManager = activeRoomManager;
         this.jwtDecoder = jwtDecoder;
         this.callSessionManager = callSessionManager;
@@ -95,6 +101,27 @@ public class SocketIOController {
             callSessionManager.markAsAnswered(data.getRoomId(), userId);
         });
 
+        server.addEventListener("join_ongoing_call", CallRequest.class, (client, data, ack) -> {
+            String userId = client.get("userId");
+            String roomId = data.getRoomId();
+
+            log.info("User [{}] đang xin tham gia trễ vào cuộc gọi phòng [{}]", userId, roomId);
+
+            // Kiểm tra xem cuộc gọi còn diễn ra không
+            if (callSessionManager.joinExistingCall(roomId, userId)) {
+                User user = userService.getUserById(userId);
+
+                // Cấp Token LiveKit mới cho người này
+                String token = callService.generateCallToken(roomId, user.getName(), userId);
+
+                // Gửi Token VỀ RIÊNG MÁY CỦA NGƯỜI XIN VÀO (client.sendEvent)
+                client.sendEvent("call_joined", new CallResponse(token, roomId));
+            } else {
+                // Báo lỗi nếu họ bấm lúc cuộc gọi vừa mới tắt xong
+                client.sendEvent("call_error", "Cuộc gọi này đã kết thúc.");
+            }
+        });
+
         server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
@@ -111,11 +138,21 @@ public class SocketIOController {
                 return;
             }
 
+            // Người chủ động bấm gọi
+            String originalCallerId = result.getInitiatorId();
+
+            Room room = roomService.getRoomById(roomId, false);
+
             // Cuộc gọi đã kết thúc
             Map<String, String> widgetMetadata = new HashMap<>();
             widgetMetadata.put("widgetType", "CALL");
-            widgetMetadata.put("callerId", callerId);
+            widgetMetadata.put("callerId", originalCallerId);
             widgetMetadata.put("status", result.getStatus());
+
+            if (room != null && room.getRoomType() == RoomType.GROUP) {
+                // Nếu là Group, đánh dấu cờ này để Frontend biết mà đưa ra GIỮA màn hình
+                widgetMetadata.put("isGroupCall", "true");
+            }
 
             if (result.getStatus().equals("ENDED")) {
                 log.info("Cuộc gọi phòng [{}] kết thúc, thời lượng: {}s", roomId, result.getDuration());
@@ -124,7 +161,7 @@ public class SocketIOController {
                 log.info("Cuộc gọi phòng [{}] bị nhỡ", roomId);
             }
 
-            eventPublisher.publishEvent(new WidgetMessageCreateEvent(roomId, callerId, widgetMetadata));
+            eventPublisher.publishEvent(new WidgetMessageCreateEvent(roomId, originalCallerId, widgetMetadata));
         });
     }
 
