@@ -4,6 +4,8 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.listener.ConnectListener;
 import com.corundumstudio.socketio.listener.DisconnectListener;
 import com.teamtobo.tobochatserver.dtos.IcomingCallDto;
+import com.teamtobo.tobochatserver.dtos.events.CallCancelledEvent;
+import com.teamtobo.tobochatserver.dtos.events.CallRequestEvent;
 import com.teamtobo.tobochatserver.dtos.request.CallRequest;
 import com.teamtobo.tobochatserver.dtos.response.CallResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
@@ -14,6 +16,7 @@ import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.stereotype.Component;
@@ -28,18 +31,22 @@ public class SocketIOController {
     private final RoomMemberService roomMemberService;
     private final ActiveRoomManager activeRoomManager;
     private final JwtDecoder jwtDecoder;
+    private final ApplicationEventPublisher eventPublisher;
+
 
     public SocketIOController(SocketIOServer server,
                               UserService userService,
                               CallService callService,
                               RoomMemberService roomMemberService,
                               JwtDecoder jwtDecoder,
-                              ActiveRoomManager activeRoomManager) {
+                              ActiveRoomManager activeRoomManager,
+                              ApplicationEventPublisher eventPublisher) {
         this.userService = userService;
         this.callService = callService;
         this.roomMemberService = roomMemberService;
         this.activeRoomManager = activeRoomManager;
         this.jwtDecoder = jwtDecoder;
+        this.eventPublisher = eventPublisher;
         server.addConnectListener(onConnected());
         server.addDisconnectListener(onDisconnected());
 
@@ -61,6 +68,7 @@ public class SocketIOController {
             client.leaveRoom("room:" + roomId);
         });
 
+        // Signaling server
         server.addEventListener("request_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
@@ -73,29 +81,7 @@ public class SocketIOController {
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
             client.sendEvent("call_started", new CallResponse(callerToken, roomId));
 
-            CompletableFuture.runAsync(() -> {
-                try {
-                    String cursor = null;
-                    do {
-                        PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
-
-                        for (RoomMemberResponse member : pageResponse.getItems()) {
-                            String memberId = member.getId();
-
-                            if (memberId.equals(callerId)) continue;
-
-                            String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
-                            server.getRoomOperations(memberId)
-                                    .sendEvent("incoming_call", new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId)));
-
-                            log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
-                        }
-                        cursor = pageResponse.getNextCursor();
-                    } while (cursor != null);
-                } catch (Exception e) {
-                    log.error("Lỗi khi xử lý vòng lặp gọi điện cho phòng [{}]: {}", roomId, e.getMessage());
-                }
-            });
+            eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken));
         });
 
         server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
@@ -104,25 +90,7 @@ public class SocketIOController {
 
             log.info("User [{}] đã hủy cuộc gọi ở phòng [{}]", callerId, roomId);
 
-            CompletableFuture.runAsync(() -> {
-                try {
-                    String cursor = null;
-                    do {
-                        PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
-
-                        for (RoomMemberResponse member : pageResponse.getItems()) {
-                            String memberId = member.getId();
-
-                            if (memberId.equals(callerId)) continue;
-
-                            server.getRoomOperations(memberId).sendEvent("call_cancelled", data);
-                        }
-                        cursor = pageResponse.getNextCursor();
-                    } while (cursor != null);
-                } catch (Exception e) {
-                    log.error("Lỗi khi xử lý vòng lặp hủy gọi cho phòng [{}]: {}", roomId, e.getMessage());
-                }
-            });
+            eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
         });
     }
 
