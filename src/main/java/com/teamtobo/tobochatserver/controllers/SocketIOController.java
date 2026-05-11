@@ -18,6 +18,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.CompletableFuture;
+
 @Slf4j
 @Component
 public class SocketIOController {
@@ -71,26 +73,29 @@ public class SocketIOController {
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
             client.sendEvent("call_started", new CallResponse(callerToken, roomId));
 
-            String cursor = null;
-            do {
-                PageResponse<RoomMemberResponse> pageResponse= roomMemberService.getRoomMembers(roomId, cursor, 50);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    String cursor = null;
+                    do {
+                        PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
 
-                for (RoomMemberResponse member : pageResponse.getItems()) {
-                    String memberId = member.getId();
+                        for (RoomMemberResponse member : pageResponse.getItems()) {
+                            String memberId = member.getId();
 
-                    if (memberId.equals(callerId)) continue;
+                            if (memberId.equals(callerId)) continue;
 
-                    // Tạo Token LiveKit riêng cho từng người nhận
-                    String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
+                            String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
+                            server.getRoomOperations(memberId)
+                                    .sendEvent("incoming_call", new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId)));
 
-                    server.getRoomOperations(memberId)
-                            .sendEvent("incoming_call", new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId)));
-
-                    log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
+                            log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
+                        }
+                        cursor = pageResponse.getNextCursor();
+                    } while (cursor != null);
+                } catch (Exception e) {
+                    log.error("Lỗi khi xử lý vòng lặp gọi điện cho phòng [{}]: {}", roomId, e.getMessage());
                 }
-
-                cursor = pageResponse.getNextCursor();
-            } while (cursor != null);
+            });
         });
 
         server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
@@ -99,22 +104,25 @@ public class SocketIOController {
 
             log.info("User [{}] đã hủy cuộc gọi ở phòng [{}]", callerId, roomId);
 
-            String cursor = null;
-            do {
-                PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    String cursor = null;
+                    do {
+                        PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(roomId, cursor, 50);
 
-                for (RoomMemberResponse member : pageResponse.getItems()) {
-                    String memberId = member.getId();
+                        for (RoomMemberResponse member : pageResponse.getItems()) {
+                            String memberId = member.getId();
 
-                    if (memberId.equals(callerId)) continue;
+                            if (memberId.equals(callerId)) continue;
 
-                    // Gửi tín hiệu tắt popup tới từng người
-                    server.getRoomOperations(memberId)
-                            .sendEvent("call_cancelled", data); // data chứa sẵn roomId
+                            server.getRoomOperations(memberId).sendEvent("call_cancelled", data);
+                        }
+                        cursor = pageResponse.getNextCursor();
+                    } while (cursor != null);
+                } catch (Exception e) {
+                    log.error("Lỗi khi xử lý vòng lặp hủy gọi cho phòng [{}]: {}", roomId, e.getMessage());
                 }
-
-                cursor = pageResponse.getNextCursor();
-            } while (cursor != null);
+            });
         });
     }
 
