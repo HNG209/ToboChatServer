@@ -83,14 +83,16 @@ public class SocketIOController {
             String roomId = data.getRoomId();
 
             User caller = userService.getUserById(callerId);
+            Room room = roomService.getRoomById(roomId, false);
+            log.info("Started call, room info {}", room);
 
             log.info("User [{}] đang gọi vào phòng [{}]", caller.getName(), roomId);
 
             // Tạo Token cho người gọi và trả về ngay để họ vào phòng LiveKit
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
             client.sendEvent("call_started", new CallResponse(callerToken, roomId));
-
-            callSessionManager.initCall(roomId, callerId);
+            int totalMembers = (room != null) ? room.getMemberCount() : 2;
+            callSessionManager.initCall(roomId, callerId, totalMembers);
 
             eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken));
         });
@@ -129,14 +131,14 @@ public class SocketIOController {
             // Xử lý rời cuộc gọi
             CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
 
-            // Gửi event tắt popup cho các máy khác
-            eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
-
             // NẾU result == null (cuộc gọi đã bị chốt bởi người thoát trước đó)
             // HOẶC result là "ONGOING" (gọi nhóm vẫn còn người đang nói chuyện)
             if (result == null || result.getStatus().equals("ONGOING")) {
                 return;
             }
+
+            // Gửi event tắt popup cho các máy khác
+            eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
 
             // Người chủ động bấm gọi
             String originalCallerId = result.getInitiatorId();

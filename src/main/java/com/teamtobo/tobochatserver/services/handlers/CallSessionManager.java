@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.handlers;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Component
 public class CallSessionManager {
     @Data
@@ -18,6 +20,9 @@ public class CallSessionManager {
         private String initiatorId;
         private Set<String> participants = ConcurrentHashMap.newKeySet();
         private boolean isAnswered = false;
+
+        private int totalMembers;
+        private int rejectedCount = 0;
     }
 
     @Data
@@ -31,12 +36,13 @@ public class CallSessionManager {
     private final Map<String, CallSession> activeCalls = new ConcurrentHashMap<>();
 
     // Khi có người yêu cầu gọi
-    public void initCall(String roomId, String callerId) {
+    public void initCall(String roomId, String callerId, int totalMembers) {
         CallSession session = activeCalls.computeIfAbsent(roomId, k -> new CallSession());
 
         // Chỉ gán người khởi tạo ở lần đầu tiên tạo phòng
         if (session.getInitiatorId() == null) {
             session.setInitiatorId(callerId);
+            session.setTotalMembers(totalMembers);
         }
         session.getParticipants().add(callerId);
     }
@@ -59,6 +65,30 @@ public class CallSessionManager {
 
         // Nếu session null nghĩa là người trước đó đã kết thúc cuộc gọi rồi -> Trả về null để Controller bỏ qua
         if (session == null) return null;
+
+        // Nếu chưa có ai chấp nhận cuộc gọi
+        if (!session.isAnswered()) {
+            // Nếu người gọi gốc (A) tự tắt -> Hủy toàn bộ
+            if (userId.equals(session.getInitiatorId())) {
+                activeCalls.remove(roomId);
+                return new CallResult("MISSED", 0, session.getInitiatorId());
+            }
+
+            // Nếu khách mời (B, C) bấm từ chối
+            else {
+                session.setRejectedCount(session.getRejectedCount() + 1);
+
+                // Kiểm tra: Nếu TẤT CẢ khách mời đều đã từ chối (Tổng thành viên trừ đi người gọi)
+                if (session.getRejectedCount() >= session.getTotalMembers() - 1) {
+                    log.info("Call missed, rejected count {}", session.getRejectedCount());
+                    activeCalls.remove(roomId);
+                    return new CallResult("MISSED", 0, session.getInitiatorId());
+                }
+
+                // Nếu vẫn còn người chưa từ chối (C đang reo chuông) -> Cứ tiếp tục gọi
+                return new CallResult("ONGOING", 0, null);
+            }
+        }
 
         // Xóa người này khỏi danh sách
         session.getParticipants().remove(userId);
