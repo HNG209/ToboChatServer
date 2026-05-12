@@ -126,4 +126,8 @@ public class CallSessionManager {
         }
         return false; // Cuộc gọi đã kết thúc hoặc không tồn tại
     }
+
+    public boolean isCallActive(String roomId) {
+        return activeCalls.containsKey(roomId);
+    }
 }
