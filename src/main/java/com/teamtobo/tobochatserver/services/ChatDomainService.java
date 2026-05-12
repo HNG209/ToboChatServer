@@ -13,4 +13,5 @@ import java.util.Map;
 public interface ChatDomainService {
     MessageResponse sendMessage(String senderId, String roomId, SendMessageRequest request);
     void sendSystemMessage(String roomId, String actorId, SystemAction action, Map<String, String> metadata);
+    MessageResponse sendWidgetMessage(String roomId, String senderId, Map<String, String> metadata);
 }

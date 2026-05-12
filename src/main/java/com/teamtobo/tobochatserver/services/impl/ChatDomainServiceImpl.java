@@ -35,7 +35,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-// Các class khác không được dùng class này, tránh lỗi circular dependencies
 public class ChatDomainServiceImpl implements ChatDomainService {
     private final DynamoDbTable<Message> messageTable;
     private final SocketIOServer socketIOServer;
@@ -217,6 +216,45 @@ public class ChatDomainServiceImpl implements ChatDomainService {
         eventPublisher.publishEvent(
                 new InboxUpdateEvent(roomId, actorId, messageResponse)
         );
+    }
+
+    @Override
+    public MessageResponse sendWidgetMessage(String roomId, String senderId, Map<String, String> metadata) {
+        String now = Instant.now().toString();
+        String messageId = UUID.randomUUID().toString();
+        String pk = "ROOM#" + roomId;
+        String sk = "MSG#" + now + "#" + messageId;
+
+        // Lưu Message vào DynamoDB với type là widgetType (CALL, POLL, LOCATION...)
+        Message widgetMsg = Message.builder()
+                .pk(pk)
+                .sk(sk)
+                .senderId(senderId)
+                .messageType(MessageType.WIDGET)
+                .messageStatus(MessageStatus.NORMAL)
+                .metadata(metadata)
+                .createdAt(now)
+                .build();
+
+        messageTable.putItem(widgetMsg);
+
+        UserResponse senderProfile = userService.getUserProfile(senderId);
+        MessageResponse response = MessageResponse.builder()
+                .id(now + "#" + messageId)
+                .roomId(roomId)
+                .user(senderProfile)
+                .messageType(MessageType.WIDGET)
+                .metadata(metadata)
+                .createdAt(now)
+                .build();
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("receive_message", response);
+
+        eventPublisher.publishEvent(new InboxUpdateEvent(roomId, senderId, response));
+        eventPublisher.publishEvent(new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE));
+
+        return response;
     }
 
     /**
