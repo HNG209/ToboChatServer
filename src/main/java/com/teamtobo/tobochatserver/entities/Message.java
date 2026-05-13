@@ -1,10 +1,7 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
-import com.teamtobo.tobochatserver.entities.enums.EntityType;
-import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
-import com.teamtobo.tobochatserver.entities.enums.MessageType;
-import com.teamtobo.tobochatserver.entities.enums.SystemAction;
+import com.teamtobo.tobochatserver.entities.enums.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -12,6 +9,7 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbAttri
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,10 +27,22 @@ public class Message extends BaseEntity {
     MessageStatus messageStatus;
     List<Attachment> attachments;
 
+    @Builder.Default
+    Map<String, Integer> reactionsSummary = new HashMap<>();
+
     // Lưu dữ liệu động cho tin nhắn hệ thống
     // Ví dụ: {"targetUserId": "user_456", "newRoomName": "new room name 123"}
     Map<String, String> metadata;
     SystemAction action;
+
+    @DynamoDbAttribute("reactionsSummary")
+    public Map<String, Integer> getReactionsSummary() {
+        return reactionsSummary;
+    }
+
+    public void setReactionsSummary(Map<String, Integer> reactionsSummary) {
+        this.reactionsSummary = reactionsSummary;
+    }
 
     @DynamoDbAttribute("metadata")
     public Map<String, String> getMetadata() { return metadata; }

@@ -4,6 +4,7 @@ public enum EntityType {
     FRIEND,
     FRIEND_REQUEST,
     MESSAGE,
+    MESSAGE_REACTION,
     ROOM,
     ROOM_MEMBER,
     USER,

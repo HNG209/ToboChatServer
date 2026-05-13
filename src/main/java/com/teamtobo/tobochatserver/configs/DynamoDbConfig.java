@@ -50,6 +50,11 @@ public class DynamoDbConfig {
     }
 
     @Bean
+    public DynamoDbTable<MessageReaction> MessageReactionTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table("ToboChatTable", TableSchema.fromBean(MessageReaction.class));
+    }
+
+    @Bean
     public DynamoDbEnhancedClient dynamoDbEnhancedClient(DynamoDbClient dynamoDbClient) {
         return DynamoDbEnhancedClient.builder()
                 .dynamoDbClient(dynamoDbClient)

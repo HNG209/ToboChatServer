@@ -3,14 +3,17 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.MessageReaction;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
@@ -34,7 +37,9 @@ import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -51,6 +56,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
+    private final DynamoDbClient dynamoDbClient;
+    private final DynamoDbTable<MessageReaction> messageReactionTable;
     private final DynamoDbTable<Message> messageTable;
     private final SocketIOServer socketIOServer;
     private final UserService userService;
@@ -211,7 +218,7 @@ public class ChatServiceImpl implements ChatService {
                             .user(userResponse)
                             .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
-                            // Trả về để xử lý tin nhắn hệ thống
+                            .reactionsSummary(msg.getReactionsSummary())
                             .messageType(msg.getMessageType())
                             .action(msg.getAction())
                             .metadata(msg.getMetadata())
@@ -257,6 +264,97 @@ public class ChatServiceImpl implements ChatService {
         );
 
         return new PageResponse<>(messageResponses, nextCursor, prevCursor);
+    }
+
+    @Override
+    public void addReaction(String userId, String roomId, String messageId, ReactionType reactionType) {
+        String reactionPk = "MSG#" + messageId;
+        String reactionSk = "REACTION#" + userId;
+        Key reactionKey = Key.builder().partitionValue(reactionPk).sortValue(reactionSk).build();
+
+        // Check xem User đã react chưa
+        MessageReaction existingReaction = messageReactionTable.getItem(r -> r.key(reactionKey));
+
+        if (existingReaction != null && existingReaction.getReactions().contains(reactionType.name())) {
+            log.info("Reaction {} đã tồn tại trong tin nhắn {}", reactionType.name(), messageId);
+            return;
+        }
+
+        if (existingReaction == null) {
+            existingReaction = MessageReaction.builder()
+                    .pk(reactionPk)
+                    .sk(reactionSk)
+                    .build();
+        }
+
+        existingReaction.getReactions().add(reactionType.name());
+        messageReactionTable.putItem(existingReaction);
+
+        String messagePk = "ROOM#" + roomId;
+        String messageSk = "MSG#" + messageId;
+
+        // Atomic update, đọc và cập nhật trong Dynamodb
+        String updateExpression = "SET #summary.#type = if_not_exists(#summary.#type, :zero) + :inc";
+        Map<String, String> expressionNames = Map.of(
+                "#summary", "reactionsSummary",
+                "#type", reactionType.name()
+        );
+        Map<String, AttributeValue> expressionValues = Map.of(
+                ":inc", AttributeValue.builder().n("1").build(),
+                ":zero", AttributeValue.builder().n("0").build()
+        );
+
+        UpdateItemRequest updateCounterRequest = UpdateItemRequest.builder()
+                .tableName(messageTable.tableName())
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s(messagePk).build(),
+                        "sk", AttributeValue.builder().s(messageSk).build()
+                ))
+                .updateExpression(updateExpression)
+                .expressionAttributeNames(expressionNames)
+                .expressionAttributeValues(expressionValues)
+                .build();
+        try {
+            dynamoDbClient.updateItem(updateCounterRequest);
+
+            MessageReactionPayload reactionPayload = MessageReactionPayload.builder()
+                    .userId(userId)
+                    .roomId(roomId)
+                    .messageId(messageId)
+                    .reactionType(reactionType)
+                    .build();
+
+            socketIOServer.getRoomOperations(roomId)
+                    .sendEvent("reaction_added", reactionPayload);
+        } catch (software.amazon.awssdk.services.dynamodb.model.DynamoDbException e) {
+            // Nếu Parent Map chưa tồn tại
+            if (e.getMessage().contains("document path provided in the update expression is invalid")) {
+
+                // Khởi tạo
+                Map<String, AttributeValue> initialMap = Map.of(
+                        reactionType.name(), AttributeValue.builder().n("1").build()
+                );
+
+                String initExpression = "SET #summary = :newMap";
+
+                UpdateItemRequest initRequest = UpdateItemRequest.builder()
+                        .tableName(messageTable.tableName())
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(messagePk).build(),
+                                "sk", AttributeValue.builder().s(messageSk).build()
+                        ))
+                        .updateExpression(initExpression)
+                        .expressionAttributeNames(Map.of("#summary", "reactionsSummary"))
+                        .expressionAttributeValues(Map.of(
+                                ":newMap", AttributeValue.builder().m(initialMap).build()
+                        ))
+                        .build();
+
+                dynamoDbClient.updateItem(initRequest);
+            } else {
+                throw e;
+            }
+        }
     }
 
     @Override

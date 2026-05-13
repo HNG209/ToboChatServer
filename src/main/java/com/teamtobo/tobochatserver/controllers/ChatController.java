@@ -9,6 +9,7 @@ import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
@@ -59,6 +60,21 @@ public class ChatController {
         return ApiResponse.<MessageResponse>builder()
                 .result(chatDomainService.sendMessage(senderId, roomId, request))
                 .build();
+    }
+
+    @Operation(summary = "Thả cảm xúc tin nhắn")
+    @PostMapping("/rooms/{roomId}/messages/{messageId}")
+    public ResponseEntity<Void> addReaction(
+            @AuthenticationPrincipal Jwt jwt,
+            @RoomId @PathVariable String roomId,
+            @PathVariable String messageId,
+            @RequestParam(defaultValue = "LIKE") ReactionType reactionType
+            ) {
+        String userId = jwt.getSubject();
+
+        chatService.addReaction(userId, roomId, messageId, reactionType);
+
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Xóa tin nhắn trong phòng")
