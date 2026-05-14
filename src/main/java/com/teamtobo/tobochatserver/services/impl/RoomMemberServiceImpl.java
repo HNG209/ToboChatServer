@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
@@ -14,6 +15,7 @@ import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
@@ -41,6 +43,8 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final ActiveRoomManager activeRoomManager;
     private final SocketIOServer socketIOServer;
 
+    @Value("${aws.dynamodb.tableName:ToboChatTable}")
+    private String tableName;
     @Override
     public PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit) {
         if (roomId == null || roomId.trim().isEmpty()) {
@@ -238,7 +242,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 }
             } catch (Exception e) {
                 // Log lỗi nếu cursor không hợp lệ, DynamoDB sẽ bỏ qua và fetch trang đầu tiên
-                System.err.println("Invalid cursor format: " + cursor);
+                log.error("Invalid cursor format: {}", cursor);
             }
         }
 
@@ -262,24 +266,22 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         }
 
         List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
-            Room room = roomService.getRoomById(i.getPk(), false);
-            RoomResponse response = getRoomMetadata(userId, i.getPk());
-            response.setLatestMessage(chatService.getLatestMessage(userId, Helper.normalizeId(i.getPk())));
+            RoomResponse room = getRoomMetadata(userId, Helper.normalizeId(i.getPk()));
 
-            if (room.getRoomType() == RoomType.DM) {
-                List<String> memberIds = roomService.getMembersByRoomId(Helper.normalizeId(i.getPk()));
-                if (memberIds.size() <= 2) {
-                    memberIds.stream()
-                            .filter(id -> !id.equals(userId))
-                            .findFirst()
-                            .ifPresent(otherUserId -> {
-                                UserResponse userResponse = userService.getUserProfile(otherUserId);
-                                response.setRoomName(userResponse.getName());
-                                response.setAvatarUrl(userResponse.getAvatarUrl());
-                            });
-                }
-            }
-            return response;
+            // Unread count
+            room.setUnreadMessages(i.getUnreadMessages());
+
+            // Latest message
+            LatestMessage latestMessage = i.getLatestMessage();
+            if(latestMessage != null)
+                room.setLatestMessage(MessageResponse.builder()
+                                .id(latestMessage.getMessageId())
+                                .roomId(room.getId())
+                                .content(latestMessage.getContent())
+                                .messageStatus(latestMessage.getMessageStatus())
+                                .createdAt(latestMessage.getCreatedAt())
+                        .build());
+            return room;
         }).toList();
 
         return PageResponse.<RoomResponse>builder()
@@ -292,7 +294,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     public RoomResponse getRoomMetadata(String userId, String roomId) { // lấy tên phòng
         Room room = roomService.getRoomById(roomId, true);
 
-        if (room == null) { // Fallback khi phòng chưa tồn tại
+        if (room == null || room.getRoomType() == RoomType.DM) { // Fallback khi phòng chưa tồn tại
             String[] parts = roomId.split("_");
 
             if (parts.length != 2) {
@@ -308,29 +310,14 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 throw new AppException(ErrorCode.ROOM_INVALID);
             }
 
-            UserResponse stranger = userService.getUserProfile(otherUserId);
+            UserResponse other = userService.getUserProfile(otherUserId);
 
             return RoomResponse.builder()
                     .id(roomId)
-                    .roomName(stranger.getName())
-                    .avatarUrl(stranger.getAvatarUrl())
+                    .roomName(other.getName())
+                    .avatarUrl(other.getAvatarUrl())
                     .roomType(RoomType.DM)
                     .build();
-        }
-
-        int unreadCount = getUnreadCount(userId, roomId);
-        if (room.getRoomType() == RoomType.DM) {
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
-            if (memberIds.size() <= 2) {
-                memberIds.stream()
-                        .filter(id -> !id.equals(userId))
-                        .findFirst().ifPresent(otherUserId -> {
-                            UserResponse other = userService.getUserProfile(otherUserId);
-                            room.setRoomName(other.getName());
-                            room.setAvatarUrl(other.getAvatarUrl());
-                        });
-
-            }
         }
 
         return RoomResponse.builder()
@@ -343,7 +330,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .allowAddMember(room.isAllowAddMember())
                 .approveMember(room.isApproveMember())
                 .memberCount(room.getMemberCount())
-                .unreadMessages(unreadCount)
                 .build();
     }
 
@@ -393,7 +379,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     @Override
     public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()
-                .tableName("ToboChatTable")
+                .tableName(tableName)
                 .key(Map.of(
                         "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
                         "sk", AttributeValue.builder().s("MEMBER#" + memberId).build()
@@ -413,6 +399,59 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                                 .s("STATUS#" + status.name() + "#TIME#" + now)
                                 .build()
                 ))
+                .build());
+    }
+
+    // v2
+    @Override
+    public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now, MessageResponse message) {
+        Map<String, String> expressionNames = new HashMap<>(Map.of("#status", "status"));
+        Map<String, AttributeValue> expressionValues = new HashMap<>(Map.of(
+                ":now", AttributeValue.builder().s(now).build(),
+                ":status", AttributeValue.builder().s(status.name()).build(),
+                ":statusTime", AttributeValue.builder().s("STATUS#" + status.name() + "#TIME#" + now).build()
+        ));
+
+        StringBuilder updateExpression = new StringBuilder(
+                "SET updatedAt = :now, " +
+                        "#status = if_not_exists(#status, :status), " +
+                        "statusTime = :statusTime"
+        );
+
+        if (message != null) {
+            Map<String, AttributeValue> latestMessageMap = new HashMap<>();
+
+            if (message.getUser() != null && message.getUser().getId() != null)
+                latestMessageMap.put("userId", AttributeValue.builder().s(message.getUser().getId()).build());
+
+            if (message.getId() != null)
+                latestMessageMap.put("messageId", AttributeValue.builder().s(message.getId()).build());
+
+            if (message.getContent() != null)
+                latestMessageMap.put("content", AttributeValue.builder().s(message.getContent()).build());
+
+            if (message.getMessageStatus() != null)
+                latestMessageMap.put("messageStatus", AttributeValue.builder().s(message.getMessageStatus().name()).build());
+
+            int attachmentSize = (message.getAttachments() != null) ? message.getAttachments().size() : 0;
+            latestMessageMap.put("attachmentSize", AttributeValue.builder().n(String.valueOf(attachmentSize)).build());
+
+            if (message.getCreatedAt() != null)
+                latestMessageMap.put("createdAt", AttributeValue.builder().s(message.getCreatedAt()).build());
+
+            updateExpression.append(", latestMessage = :lm");
+            expressionValues.put(":lm", AttributeValue.builder().m(latestMessageMap).build());
+        }
+
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName(tableName)
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s("ROOM#" + roomId).build(),
+                        "sk", AttributeValue.builder().s("MEMBER#" + memberId).build()
+                ))
+                .updateExpression(updateExpression.toString())
+                .expressionAttributeNames(expressionNames)
+                .expressionAttributeValues(expressionValues)
                 .build());
     }
 

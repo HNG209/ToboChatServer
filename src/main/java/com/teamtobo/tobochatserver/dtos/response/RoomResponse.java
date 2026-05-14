@@ -20,13 +20,13 @@ public class RoomResponse {
     RoomType roomType;
     MessageResponse latestMessage;
 
-    boolean allowAddMember;
-    boolean allowSendMessage;
-    boolean allowUpdateMetadata;
-    boolean approveMember;
+    Boolean allowAddMember;
+    Boolean allowSendMessage;
+    Boolean allowUpdateMetadata;
+    Boolean approveMember;
 
-    int memberCount;
-    int pendingCount;
+    Integer memberCount;
+    Integer pendingCount;
     int unreadMessages;
 
     String createdAt;

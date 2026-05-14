@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.entities;
 
+import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
@@ -28,6 +29,8 @@ public class RoomMember extends BaseEntity {
 
     // GSI_ChatInbox
     String statusTime;
+
+    LatestMessage latestMessage;
 
     //notification
     int unreadMessages;

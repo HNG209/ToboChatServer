@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -46,5 +47,9 @@ public class Room extends BaseEntity { // Room metadata
     @Override
     public EntityType getEntityType() {
         return EntityType.ROOM;
+    }
+
+    public String getRoomId() {
+        return Helper.normalizeId(this.getPk());
     }
 }

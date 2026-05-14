@@ -45,11 +45,12 @@ public class InboxEventHandler {
                 }
 
                 // tạo mới hoặc cập nhật inbox cho người dùng
-                roomMemberService.upsertMemberInbox(
+                roomMemberService.upsertMemberInbox( // v2
                         event.getRoomId(),
                         memberId,
                         inboxStatus,
-                        now
+                        now,
+                        event.getMessage()
                 );
 
                 if (memberId.equals(event.getSenderId())) continue;
