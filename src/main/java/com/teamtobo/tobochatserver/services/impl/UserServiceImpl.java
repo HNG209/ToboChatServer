@@ -23,13 +23,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
-import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.Page;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.*;
+import software.amazon.awssdk.enhanced.dynamodb.model.*;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -41,6 +36,7 @@ import java.util.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -58,6 +54,7 @@ public class UserServiceImpl implements UserService {
     private final CognitoHelper cognitoHelper;
     private final Map<String, String> mfaCache = new ConcurrentHashMap<>();
     private final DynamoDbClient dynamoDbClient;
+    private final DynamoDbEnhancedClient enhancedClient;
     private final ApplicationEventPublisher eventPublisher;
     private final SocketIOServer socketIOServer;
 
@@ -79,6 +76,49 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.USER_NOT_FOUND);
         }
         return user;
+    }
+
+    @Override
+    public Map<String, UserResponse> getUsersMapByIds(List<String> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // Loại bỏ các ID trùng lặp
+        List<String> uniqueIds = userIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, UserResponse> userProfileMap = new HashMap<>();
+
+        int batchSize = 100;
+        for (int i = 0; i < uniqueIds.size(); i += batchSize) {
+            List<String> chunk = uniqueIds.subList(i, Math.min(uniqueIds.size(), i + batchSize));
+
+            ReadBatch.Builder<User> readBatchBuilder = ReadBatch.builder(User.class)
+                    .mappedTableResource(userTable);
+
+            chunk.forEach(id -> readBatchBuilder.addGetItem(Key.builder()
+                    .partitionValue("USER#" + id)
+                    .sortValue("PROFILE")
+                    .build()));
+
+            BatchGetResultPageIterable batchResults = enhancedClient.batchGetItem(r -> r.addReadBatch(readBatchBuilder.build()));
+
+            // Đọc kết quả của lô hiện tại và map vào kết quả
+            batchResults.resultsForTable(userTable).forEach(user -> {
+                UserResponse responseDto = UserResponse.builder()
+                        .id(user.getUserId())
+                        .name(user.getName())
+                        .avatarUrl(user.getAvatarUrl())
+                        .email(user.getEmail())
+                        .build();
+                userProfileMap.put(user.getUserId(), responseDto);
+            });
+        }
+
+        return userProfileMap;
     }
 
     @Override

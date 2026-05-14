@@ -5,10 +5,7 @@ import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
-import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
 import com.teamtobo.tobochatserver.entities.User;
@@ -29,13 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
-import software.amazon.awssdk.enhanced.dynamodb.Expression;
-import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.Page;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
-import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.*;
+import software.amazon.awssdk.enhanced.dynamodb.model.*;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -57,6 +49,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
     private final DynamoDbClient dynamoDbClient;
+    private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbTable<MessageReaction> messageReactionTable;
     private final DynamoDbTable<Message> messageTable;
     private final SocketIOServer socketIOServer;
@@ -355,6 +348,49 @@ public class ChatServiceImpl implements ChatService {
                 throw e;
             }
         }
+    }
+
+    @Override
+    public PageResponse<MessageReactionResponse> getMessageReactions(String messageId, String roomId, String cursor, int limit) {
+        String pk = "MSG#" + messageId;
+
+        Key searchKey = Key.builder().partitionValue(pk).sortValue("REACTION#").build();
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(searchKey))
+                .limit(limit);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            requestBuilder.exclusiveStartKey(Map.of(
+                    "pk", AttributeValue.builder().s(pk).build(),
+                    "sk", AttributeValue.builder().s(cursor).build()
+            ));
+        }
+
+        Page<MessageReaction> page = messageReactionTable.query(requestBuilder.build()).stream().findFirst().orElse(null);
+        if (page == null || page.items().isEmpty()) return new PageResponse<>(Collections.emptyList(), null, null);
+
+        // Thu thập các UserId
+        List<String> userIds = page.items().stream()
+                .map(r -> r.getSk().replace("REACTION#", ""))
+                .toList();
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(userIds);
+
+        // Lắp ghép dữ liệu
+        List<MessageReactionResponse> responses = page.items().stream()
+                .map(reaction -> {
+                    String uid = reaction.getSk().replace("REACTION#", "");
+                    return MessageReactionResponse.builder()
+                            .user(userProfileMap.getOrDefault(
+                                    uid,
+                                    UserResponse.builder().id(uid).name("Người dùng Tobo").build()))
+                            .reactions(reaction.getReactions())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        String nextCursor = (page.lastEvaluatedKey() != null) ? page.lastEvaluatedKey().get("sk").s() : null;
+        return new PageResponse<>(responses, nextCursor, null);
     }
 
     @Override

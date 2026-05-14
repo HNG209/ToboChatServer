@@ -5,13 +5,10 @@ import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
 import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
-import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
-import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
-import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
 import com.teamtobo.tobochatserver.services.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,9 +31,10 @@ public class ChatController {
 
     @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
     @GetMapping("/rooms/{roomId}/messages")
+    @RequireRoomMember
     public ApiResponse<PageResponse<MessageResponse>> getMessages(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "before") String direction
@@ -62,8 +60,9 @@ public class ChatController {
                 .build();
     }
 
-    @Operation(summary = "Thả cảm xúc tin nhắn")
-    @PostMapping("/rooms/{roomId}/messages/{messageId}")
+    @Operation(summary = "Thả reaction cho tin nhắn")
+    @PostMapping("/rooms/{roomId}/messages/{messageId}/reactions")
+    @RequireRoomMember
     public ResponseEntity<Void> addReaction(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
@@ -77,11 +76,26 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Xóa tin nhắn trong phòng")
+    @Operation(summary = "Danh sách reaction của 1 tin nhắn")
+    @GetMapping("/rooms/{roomId}/messages/{messageId}/reactions")
+    @RequireRoomMember
+    public ApiResponse<PageResponse<MessageReactionResponse>> getMessageReactions(
+            @RoomId @PathVariable String roomId,
+            @PathVariable String messageId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+        return ApiResponse.<PageResponse<MessageReactionResponse>>builder()
+                .result(chatService.getMessageReactions(messageId, roomId, cursor, limit))
+                .build();
+    }
+
+    @Operation(summary = "Thu hồi tin nhắn trong phòng")
     @PostMapping("/rooms/{roomId}/messages/revoke")
+    @RequireRoomMember
     public ResponseEntity<?> revokeMessage(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @RequestBody RevokeMessageRequest request
     ) {
         String userId = jwt.getSubject();
@@ -92,7 +106,7 @@ public class ChatController {
         return ResponseEntity.ok().body("Thu hồi thành công");
     }
 
-    @Operation(summary = "Gửi tin nhắn cho nhiều group ( có thể gưỉ nhìu tin nhắn một lần)")
+    @Operation(summary = "Gửi tin nhắn cho nhiều group")
     @PostMapping("/rooms/forwardMessage")
     public ResponseEntity<?> forwardMessage(
             @AuthenticationPrincipal Jwt jwt,
@@ -129,9 +143,10 @@ public class ChatController {
 
     @Operation(summary = "Xoá tin nhắn ở phía tôi")
     @DeleteMapping("/rooms/{roomId}/messages/{messageId}")
+    @RequireRoomMember
     public ResponseEntity<Void> deleteMessage(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId,
+            @RoomId @PathVariable String roomId,
             @PathVariable String messageId
     ) {
         String userId = jwt.getSubject();

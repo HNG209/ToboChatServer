@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services;
 
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
+import com.teamtobo.tobochatserver.dtos.response.MessageReactionResponse;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
@@ -13,6 +14,7 @@ public interface ChatService {
     MessageResponse getRoomMessage(String userId, String roomId, String messageId);
     MessageResponse getMessage(String messageId, String roomId);
     void addReaction(String userId, String roomId, String messageId, ReactionType reactionType);
+    PageResponse<MessageReactionResponse> getMessageReactions(String messageId, String roomId, String cursor, int limit);
     Message getMessageById(String messageId, String roomId);
     PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit, String direction);
     MessageResponse getLatestMessage(String userId, String roomId);

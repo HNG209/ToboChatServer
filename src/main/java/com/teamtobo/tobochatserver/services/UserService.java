@@ -7,8 +7,12 @@ import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 
+import java.util.List;
+import java.util.Map;
+
 public interface UserService {
     User getUserById(String userId);
+    Map<String, UserResponse> getUsersMapByIds(List<String> userIds); // batch get
     UserResponse getUserProfile(String userId);
     User updateUserProfile(String userId, UserUpdateRequest request);
     void sendFriendRequest(String userId, String otherId);

@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.entities;
 
 import com.teamtobo.tobochatserver.entities.enums.EntityType;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.SuperBuilder;
@@ -57,5 +58,9 @@ public class User extends BaseEntity { // Không lưu mật khẩu, để Cognit
     @DynamoDbSecondarySortKey(indexNames = "GSI_EmailSearch")
     public String getSearchSk() {
         return email != null ? email.toLowerCase() : null;
+    }
+
+    public String getUserId() {
+        return Helper.normalizeId(this.getPk());
     }
 }
