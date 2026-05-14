@@ -264,24 +264,68 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             // Mã hóa thành Base64 để trả về Frontend
             nextCursor = Base64.getEncoder().encodeToString(rawNextCursor.getBytes(StandardCharsets.UTF_8));
         }
+        List<RoomMember> inboxItems = firstPage.items();
 
-        List<RoomResponse> roomResponses = firstPage.items().stream().map(i -> {
-            RoomResponse room = getRoomMetadata(userId, Helper.normalizeId(i.getPk()));
+        // Phân loại id phòng
+        List<String> groupRoomIds = new ArrayList<>();
+        List<String> dmUserIds = new ArrayList<>();
 
-            // Unread count
-            room.setUnreadMessages(i.getUnreadMessages());
+        for (RoomMember item : inboxItems) {
+            String roomId = Helper.normalizeId(item.getPk());
+            if (roomId.contains("_")) {
+                String[] parts = roomId.split("_");
+                String otherUserId = parts[0].equals(userId) ? parts[1] : parts[0];
+                dmUserIds.add(otherUserId);
+            } else {
+                groupRoomIds.add(roomId);
+            }
+        }
 
-            // Latest message
-            LatestMessage latestMessage = i.getLatestMessage();
-            if(latestMessage != null)
-                room.setLatestMessage(MessageResponse.builder()
-                                .id(latestMessage.getMessageId())
-                                .roomId(room.getId())
-                                .content(latestMessage.getContent())
-                                .messageStatus(latestMessage.getMessageStatus())
-                                .createdAt(latestMessage.getCreatedAt())
+        // Batch get
+        Map<String, UserResponse> dmUsersMap = userService.getUsersMapByIds(dmUserIds);
+        Map<String, Room> groupsMap = roomService.getRoomsMapByIds(groupRoomIds);
+
+        List<RoomResponse> roomResponses = inboxItems.stream().map(i -> {
+            String roomId = Helper.normalizeId(i.getPk());
+            RoomResponse roomResponse = new RoomResponse();
+            roomResponse.setId(roomId);
+            roomResponse.setUnreadMessages(i.getUnreadMessages());
+
+            // Map Latest Message
+            LatestMessage lm = i.getLatestMessage();
+            if (lm != null) {
+                roomResponse.setLatestMessage(MessageResponse.builder()
+                        .id(lm.getMessageId())
+                        .roomId(roomId)
+                        .content(lm.getContent())
+                         .createdAt(lm.getCreatedAt())
                         .build());
-            return room;
+            }
+
+            // Map Metadata
+            if (roomId.contains("_")) {
+                // Là DM
+                String[] parts = roomId.split("_");
+                String otherUserId = parts[0].equals(userId) ? parts[1] : parts[0];
+                UserResponse otherUser = dmUsersMap.get(otherUserId);
+
+                if (otherUser != null) {
+                    roomResponse.setRoomName(otherUser.getName()); // Tên hiển thị là tên người kia
+                    roomResponse.setAvatarUrl(otherUser.getAvatarUrl());
+                    roomResponse.setRoomType(RoomType.DM);
+                }
+            } else {
+                // Là Group
+                Room group = groupsMap.get(roomId);
+                if (group != null) {
+                    roomResponse.setRoomName(group.getRoomName());
+                    roomResponse.setAvatarUrl(group.getAvatarUrl());
+                    roomResponse.setRoomType(group.getRoomType());
+                    roomResponse.setMemberCount(group.getMemberCount());
+                }
+            }
+
+            return roomResponse;
         }).toList();
 
         return PageResponse.<RoomResponse>builder()

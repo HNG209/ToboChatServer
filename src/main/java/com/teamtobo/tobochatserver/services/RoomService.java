@@ -9,9 +9,11 @@ import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 
 import java.util.List;
+import java.util.Map;
 
 public interface RoomService {
     List<String> getMembersByRoomId(String roomId);
     Room getRoomById(String roomId, boolean skipException);
+    Map<String, Room> getRoomsMapByIds(List<String> roomIds); // Batch get
     PresignedUploadResponse getRoomAvatarUploadUrl(String roomId, String contentType);
 }
