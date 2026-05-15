@@ -113,6 +113,7 @@ public class UserServiceImpl implements UserService {
                         .name(user.getName())
                         .avatarUrl(user.getAvatarUrl())
                         .email(user.getEmail())
+                        .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
                         .build();
                 userProfileMap.put(user.getUserId(), responseDto);
             });
@@ -352,6 +353,10 @@ public class UserServiceImpl implements UserService {
             nextCursor = page.lastEvaluatedKey().get("sk").s();
         }
 
+        List<String> userIds = page.items().stream().map(i -> Helper.normalizeId(i.getSk())).toList();
+
+        Map<String, UserResponse> userResponseMap = getUsersMapByIds(userIds);
+
         return PageResponse.<FriendResponse>builder()
                 .items(page.items().stream().map(
                         i -> {
@@ -390,13 +395,13 @@ public class UserServiceImpl implements UserService {
                                     memberStatus = MemberStatus.PENDING;
                             }
 
-                            User user = getUserById(Helper.normalizeId(i.getSk()));
+                            UserResponse user = userResponseMap.get(Helper.normalizeId(i.getSk()));
 
                             return FriendResponse.builder()
                                     .id(i.getSk())
                                     .name(user.getName())
                                     .memberStatus(memberStatus) // optional
-                                    .allowAutoAddToGroup(user.isAllowAutoAddToGroup())
+                                    .allowAutoAddToGroup(user.getAllowAutoAddToGroup())
                                     .avatarUrl(user.getAvatarUrl())
                                     .createdAt(i.getCreatedAt()) // ngày kết bạn
                                     .build();
