@@ -1,18 +1,17 @@
 package com.teamtobo.tobochatserver.services;
 
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
-import com.teamtobo.tobochatserver.dtos.response.MessageReactionResponse;
-import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 
 import java.util.List;
+import java.util.Map;
 
 public interface ChatService {
     MessageResponse getRoomMessage(String userId, String roomId, String messageId);
     MessageResponse getMessage(String messageId, String roomId);
+    Map<String, Message> getMessagesMapByIds(List<String> messageIds, String roomId);
     void addReaction(String userId, String roomId, String messageId, ReactionType reactionType);
     PageResponse<MessageReactionResponse> getMessageReactions(String messageId, String roomId, String cursor, int limit);
     Message getMessageById(String messageId, String roomId);

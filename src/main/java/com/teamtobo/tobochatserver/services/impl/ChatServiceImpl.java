@@ -4,20 +4,15 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
-import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
-import com.teamtobo.tobochatserver.entities.User;
-import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
-import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
@@ -28,19 +23,15 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.*;
 import software.amazon.awssdk.enhanced.dynamodb.model.*;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -107,6 +98,42 @@ public class ChatServiceImpl implements ChatService {
                 .messageStatus(message.getMessageStatus())
                 .roomId(roomId)
                 .build();
+    }
+
+    @Override
+    public Map<String, Message> getMessagesMapByIds(List<String> messageIds, String roomId) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // Loại bỏ các ID trùng lặp
+        List<String> uniqueIds = messageIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, Message> messageMap = new HashMap<>();
+
+        int batchSize = 100;
+        for (int i = 0; i < uniqueIds.size(); i += batchSize) {
+            List<String> chunk = uniqueIds.subList(i, Math.min(uniqueIds.size(), i + batchSize));
+
+            ReadBatch.Builder<Message> readBatchBuilder = ReadBatch.builder(Message.class)
+                    .mappedTableResource(messageTable);
+
+            chunk.forEach(id -> readBatchBuilder.addGetItem(Key.builder()
+                    .partitionValue("ROOM#" + roomId)
+                    .sortValue("MSG#" + id)
+                    .build()));
+
+            BatchGetResultPageIterable batchResults = enhancedClient.batchGetItem(r -> r.addReadBatch(readBatchBuilder.build()));
+
+            // Đọc kết quả của lô hiện tại và map vào kết quả
+            batchResults.resultsForTable(messageTable).forEach(message ->
+                    messageMap.put(message.getSk().replace("MSG#", ""), message));
+        }
+
+        return messageMap;
     }
 
     @Override
@@ -194,19 +221,48 @@ public class ChatServiceImpl implements ChatService {
                 .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
                 .collect(Collectors.toList());
 
+        // Lọc id của các replied message cho batch get
+        List<String> repliedMessageIds = items.stream()
+                .filter(msg -> msg.getMessageStatus() != MessageStatus.REVOKED && msg.getReplyTo() != null)
+                .map(Message::getReplyTo)
+                .collect(Collectors.toList());
+
+        Map<String, Message> messageMap = getMessagesMapByIds(repliedMessageIds, roomId);
+
+        // Thêm userId của message gốc cho batch get
+        List<String> userIds = new ArrayList<>();
+        for (Message message : items) {
+            userIds.add(message.getSenderId());
+        }
+
+        // Thêm luôn userId của replied message
+        messageMap.forEach((k, v) -> userIds.add(v.getSenderId()));
+
+        // Batch get user
+        Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
+
         // DTO mapping
         List<MessageResponse> messageResponses = items.stream()
                 .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isRevoked = msg.getMessageStatus() == MessageStatus.REVOKED;
-                    UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
+                    UserResponse userResponse = userResponseMap.get(msg.getSenderId());
+
+                    Message repliedMessage = messageMap.getOrDefault(msg.getReplyTo(), null);
+                    MessageResponse repliedMessageResponse = repliedMessage != null ? MessageResponse.builder()
+                            .user(userResponseMap.getOrDefault(repliedMessage.getSenderId(), null))
+                            .id(msg.getReplyTo())
+                            .content(repliedMessage.getContent())
+                            .attachments(repliedMessage.getAttachments())
+                            .roomId(roomId)
+                            .build() : null;
 
                     return MessageResponse.builder()
                             .id(messageId)
                             // Tin nhắn đã thu hồi ko cần trả về content và replyTo
                             .content(isRevoked ? null : msg.getContent())
-                            .replyTo(!isRevoked && msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
+                            .replyTo(!isRevoked ? repliedMessageResponse : null)
                             .createdAt(msg.getCreatedAt())
                             .user(userResponse)
                             .attachments(isRevoked ? null : msg.getAttachments())
