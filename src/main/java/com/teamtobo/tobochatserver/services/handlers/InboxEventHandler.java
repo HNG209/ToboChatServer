@@ -53,13 +53,12 @@ public class InboxEventHandler {
                             event.getMessage()
                     );
 
-                    if (!memberId.equals(event.getSenderId())) {
-                        socketIOServer.getRoomOperations(memberId)
-                                .sendEvent("inbox_updated", Map.of(
-                                        "message", event.getMessage(),
-                                        "inboxStatus", inboxStatus
-                                ));
-                    }
+                    socketIOServer.getRoomOperations(memberId)
+                            .sendEvent("inbox_updated", Map.of(
+                                    "message", event.getMessage(),
+                                    "inboxStatus", inboxStatus
+                            ));
+
                 } catch (Exception e) {
                     log.error("Lỗi cập nhật inbox cho member {} trong room {}: {}", memberId, event.getRoomId(), e.getMessage());
                 }
