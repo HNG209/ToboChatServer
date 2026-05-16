@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.services;
 
+import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
@@ -9,7 +10,8 @@ import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import java.util.List;
 
 public interface RoomMemberService {
-    void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now);
+    void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now); // v1
+    void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now, MessageResponse message); // v2
     RoomMember getMemberById(String memberId, String roomId);
     RoomMemberResponse getMember(String memberId, String roomId);
     RoomMemberResponse getMyProfile(String userId, String roomId);

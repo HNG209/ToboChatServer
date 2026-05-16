@@ -3,21 +3,16 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
-import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PresignedUrlResponse;
-import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
-import com.teamtobo.tobochatserver.entities.User;
-import com.teamtobo.tobochatserver.entities.enums.MessageType;
+import com.teamtobo.tobochatserver.entities.MessageReaction;
+import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
-import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
@@ -26,24 +21,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
-import software.amazon.awssdk.enhanced.dynamodb.Expression;
-import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.Page;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
-import software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest;
-import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.enhanced.dynamodb.*;
+import software.amazon.awssdk.enhanced.dynamodb.model.*;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -51,6 +39,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
+    private final DynamoDbClient dynamoDbClient;
+    private final DynamoDbEnhancedClient enhancedClient;
+    private final DynamoDbTable<MessageReaction> messageReactionTable;
     private final DynamoDbTable<Message> messageTable;
     private final SocketIOServer socketIOServer;
     private final UserService userService;
@@ -107,6 +98,42 @@ public class ChatServiceImpl implements ChatService {
                 .messageStatus(message.getMessageStatus())
                 .roomId(roomId)
                 .build();
+    }
+
+    @Override
+    public Map<String, Message> getMessagesMapByIds(List<String> messageIds, String roomId) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // Loại bỏ các ID trùng lặp
+        List<String> uniqueIds = messageIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, Message> messageMap = new HashMap<>();
+
+        int batchSize = 100;
+        for (int i = 0; i < uniqueIds.size(); i += batchSize) {
+            List<String> chunk = uniqueIds.subList(i, Math.min(uniqueIds.size(), i + batchSize));
+
+            ReadBatch.Builder<Message> readBatchBuilder = ReadBatch.builder(Message.class)
+                    .mappedTableResource(messageTable);
+
+            chunk.forEach(id -> readBatchBuilder.addGetItem(Key.builder()
+                    .partitionValue("ROOM#" + roomId)
+                    .sortValue("MSG#" + id)
+                    .build()));
+
+            BatchGetResultPageIterable batchResults = enhancedClient.batchGetItem(r -> r.addReadBatch(readBatchBuilder.build()));
+
+            // Đọc kết quả của lô hiện tại và map vào kết quả
+            batchResults.resultsForTable(messageTable).forEach(message ->
+                    messageMap.put(message.getSk().replace("MSG#", ""), message));
+        }
+
+        return messageMap;
     }
 
     @Override
@@ -194,24 +221,53 @@ public class ChatServiceImpl implements ChatService {
                 .filter(msg -> msg.getSk() != null && msg.getSk().startsWith("MSG#"))
                 .collect(Collectors.toList());
 
+        // Lọc id của các replied message cho batch get
+        List<String> repliedMessageIds = items.stream()
+                .filter(msg -> msg.getMessageStatus() != MessageStatus.REVOKED && msg.getReplyTo() != null)
+                .map(Message::getReplyTo)
+                .collect(Collectors.toList());
+
+        Map<String, Message> messageMap = getMessagesMapByIds(repliedMessageIds, roomId);
+
+        // Thêm userId của message gốc cho batch get
+        List<String> userIds = new ArrayList<>();
+        for (Message message : items) {
+            userIds.add(message.getSenderId());
+        }
+
+        // Thêm luôn userId của replied message
+        messageMap.forEach((k, v) -> userIds.add(v.getSenderId()));
+
+        // Batch get user
+        Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
+
         // DTO mapping
         List<MessageResponse> messageResponses = items.stream()
                 .filter(msg -> !msg.getDeletedByUserIds().contains(userId))
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isRevoked = msg.getMessageStatus() == MessageStatus.REVOKED;
-                    UserResponse userResponse = userService.getUserProfile(msg.getSenderId());
+                    UserResponse userResponse = userResponseMap.get(msg.getSenderId());
+
+                    Message repliedMessage = messageMap.getOrDefault(msg.getReplyTo(), null);
+                    MessageResponse repliedMessageResponse = repliedMessage != null ? MessageResponse.builder()
+                            .user(userResponseMap.getOrDefault(repliedMessage.getSenderId(), null))
+                            .id(msg.getReplyTo())
+                            .content(repliedMessage.getContent())
+                            .attachments(repliedMessage.getAttachments())
+                            .roomId(roomId)
+                            .build() : null;
 
                     return MessageResponse.builder()
                             .id(messageId)
                             // Tin nhắn đã thu hồi ko cần trả về content và replyTo
                             .content(isRevoked ? null : msg.getContent())
-                            .replyTo(!isRevoked && msg.getReplyTo() != null ? getRoomMessage(userId, roomId, msg.getReplyTo()) : null)
+                            .replyTo(!isRevoked ? repliedMessageResponse : null)
                             .createdAt(msg.getCreatedAt())
                             .user(userResponse)
                             .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
-                            // Trả về để xử lý tin nhắn hệ thống
+                            .reactionsSummary(msg.getReactionsSummary())
                             .messageType(msg.getMessageType())
                             .action(msg.getAction())
                             .metadata(msg.getMetadata())
@@ -257,6 +313,140 @@ public class ChatServiceImpl implements ChatService {
         );
 
         return new PageResponse<>(messageResponses, nextCursor, prevCursor);
+    }
+
+    @Override
+    public void addReaction(String userId, String roomId, String messageId, ReactionType reactionType) {
+        String reactionPk = "MSG#" + messageId;
+        String reactionSk = "REACTION#" + userId;
+        Key reactionKey = Key.builder().partitionValue(reactionPk).sortValue(reactionSk).build();
+
+        // Check xem User đã react chưa
+        MessageReaction existingReaction = messageReactionTable.getItem(r -> r.key(reactionKey));
+
+        if (existingReaction != null && existingReaction.getReactions().contains(reactionType.name())) {
+            log.info("Reaction {} đã tồn tại trong tin nhắn {}", reactionType.name(), messageId);
+            return;
+        }
+
+        if (existingReaction == null) {
+            existingReaction = MessageReaction.builder()
+                    .pk(reactionPk)
+                    .sk(reactionSk)
+                    .build();
+        }
+
+        existingReaction.getReactions().add(reactionType.name());
+        messageReactionTable.putItem(existingReaction);
+
+        String messagePk = "ROOM#" + roomId;
+        String messageSk = "MSG#" + messageId;
+
+        // Atomic update, đọc và cập nhật trong Dynamodb
+        String updateExpression = "SET #summary.#type = if_not_exists(#summary.#type, :zero) + :inc";
+        Map<String, String> expressionNames = Map.of(
+                "#summary", "reactionsSummary",
+                "#type", reactionType.name()
+        );
+        Map<String, AttributeValue> expressionValues = Map.of(
+                ":inc", AttributeValue.builder().n("1").build(),
+                ":zero", AttributeValue.builder().n("0").build()
+        );
+
+        UpdateItemRequest updateCounterRequest = UpdateItemRequest.builder()
+                .tableName(messageTable.tableName())
+                .key(Map.of(
+                        "pk", AttributeValue.builder().s(messagePk).build(),
+                        "sk", AttributeValue.builder().s(messageSk).build()
+                ))
+                .updateExpression(updateExpression)
+                .expressionAttributeNames(expressionNames)
+                .expressionAttributeValues(expressionValues)
+                .build();
+        try {
+            dynamoDbClient.updateItem(updateCounterRequest);
+
+            MessageReactionPayload reactionPayload = MessageReactionPayload.builder()
+                    .userId(userId)
+                    .roomId(roomId)
+                    .messageId(messageId)
+                    .reactionType(reactionType)
+                    .build();
+
+            socketIOServer.getRoomOperations(roomId)
+                    .sendEvent("reaction_added", reactionPayload);
+        } catch (software.amazon.awssdk.services.dynamodb.model.DynamoDbException e) {
+            // Nếu Parent Map chưa tồn tại
+            if (e.getMessage().contains("document path provided in the update expression is invalid")) {
+
+                // Khởi tạo
+                Map<String, AttributeValue> initialMap = Map.of(
+                        reactionType.name(), AttributeValue.builder().n("1").build()
+                );
+
+                String initExpression = "SET #summary = :newMap";
+
+                UpdateItemRequest initRequest = UpdateItemRequest.builder()
+                        .tableName(messageTable.tableName())
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s(messagePk).build(),
+                                "sk", AttributeValue.builder().s(messageSk).build()
+                        ))
+                        .updateExpression(initExpression)
+                        .expressionAttributeNames(Map.of("#summary", "reactionsSummary"))
+                        .expressionAttributeValues(Map.of(
+                                ":newMap", AttributeValue.builder().m(initialMap).build()
+                        ))
+                        .build();
+
+                dynamoDbClient.updateItem(initRequest);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    @Override
+    public PageResponse<MessageReactionResponse> getMessageReactions(String messageId, String roomId, String cursor, int limit) {
+        String pk = "MSG#" + messageId;
+
+        Key searchKey = Key.builder().partitionValue(pk).sortValue("REACTION#").build();
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.sortBeginsWith(searchKey))
+                .limit(limit);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            requestBuilder.exclusiveStartKey(Map.of(
+                    "pk", AttributeValue.builder().s(pk).build(),
+                    "sk", AttributeValue.builder().s(cursor).build()
+            ));
+        }
+
+        Page<MessageReaction> page = messageReactionTable.query(requestBuilder.build()).stream().findFirst().orElse(null);
+        if (page == null || page.items().isEmpty()) return new PageResponse<>(Collections.emptyList(), null, null);
+
+        // Thu thập các UserId
+        List<String> userIds = page.items().stream()
+                .map(r -> r.getSk().replace("REACTION#", ""))
+                .toList();
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(userIds);
+
+        // Lắp ghép dữ liệu
+        List<MessageReactionResponse> responses = page.items().stream()
+                .map(reaction -> {
+                    String uid = reaction.getSk().replace("REACTION#", "");
+                    return MessageReactionResponse.builder()
+                            .user(userProfileMap.getOrDefault(
+                                    uid,
+                                    UserResponse.builder().id(uid).name("Người dùng Tobo").build()))
+                            .reactions(reaction.getReactions())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        String nextCursor = (page.lastEvaluatedKey() != null) ? page.lastEvaluatedKey().get("sk").s() : null;
+        return new PageResponse<>(responses, nextCursor, null);
     }
 
     @Override

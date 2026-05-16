@@ -36,31 +36,33 @@ public class InboxEventHandler {
 
             String now = Instant.now().toString();
 
-            for (String memberId : memberIds) {
-                InboxStatus inboxStatus = InboxStatus.ACTIVE;
+            memberIds.parallelStream().forEach(memberId -> {
+                try {
+                    InboxStatus inboxStatus = InboxStatus.ACTIVE;
 
-                if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
-                    FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
-                    inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
+                    if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
+                        FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
+                        inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
+                    }
+
+                    roomMemberService.upsertMemberInbox(
+                            event.getRoomId(),
+                            memberId,
+                            inboxStatus,
+                            now,
+                            event.getMessage()
+                    );
+
+                    socketIOServer.getRoomOperations(memberId)
+                            .sendEvent("inbox_updated", Map.of(
+                                    "message", event.getMessage(),
+                                    "inboxStatus", inboxStatus
+                            ));
+
+                } catch (Exception e) {
+                    log.error("Lỗi cập nhật inbox cho member {} trong room {}: {}", memberId, event.getRoomId(), e.getMessage());
                 }
-
-                // tạo mới hoặc cập nhật inbox cho người dùng
-                roomMemberService.upsertMemberInbox(
-                        event.getRoomId(),
-                        memberId,
-                        inboxStatus,
-                        now
-                );
-
-                if (memberId.equals(event.getSenderId())) continue;
-
-                socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("inbox_updated", Map.of(
-                                "message", event.getMessage(),
-                                "inboxStatus", inboxStatus
-                        ));
-            }
-
+            });
         } catch (Exception e) {
             log.error("Inbox update failed for room {}", event.getRoomId(), e);
         }
