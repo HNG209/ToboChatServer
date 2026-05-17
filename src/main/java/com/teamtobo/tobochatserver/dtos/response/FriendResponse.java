@@ -18,7 +18,7 @@ public class FriendResponse {
     String avatarUrl;
     String createdAt; // Ngày đồng ý kết bạn
     MemberStatus memberStatus;
-    boolean allowAutoAddToGroup;
+    Boolean allowAutoAddToGroup;
     public String getId() {
         return Helper.normalizeId(this.id);
     }

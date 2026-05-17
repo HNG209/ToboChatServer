@@ -10,6 +10,7 @@ import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
+    private final ContactService contactService;
 
     @Operation(summary = "Thông tin người dùng hiện tại")
     @GetMapping("/me")
@@ -83,14 +85,14 @@ public class UserController {
     public ApiResponse<PageResponse<FriendResponse>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String roomId,
-            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
 
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<FriendResponse>>builder()
-                .result(userService.getFriends(userId, roomId, cursor, limit))
+                .result(contactService.getFriends(userId, roomId, cursor, limit))
                 .build();
     }
 
