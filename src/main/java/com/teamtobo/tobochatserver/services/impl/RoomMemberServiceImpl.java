@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.payloads.InboxUnreadUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -129,7 +130,10 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 }
 
                 socketIOServer.getRoomOperations(member.getId())
-                        .sendEvent("unread_updated", roomId);
+                        .sendEvent("unread_updated", InboxUnreadUpdatePayload.builder()
+                                .roomId(roomId)
+                                .unreadCount(1)
+                                .build());
 
                 increaseRoomUnreadMessage(cleanMemberId, roomId);
                 updateTotalUnreadMessage(cleanMemberId, 1);
@@ -151,6 +155,13 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             updateTotalUnreadMessage(userId, -countToReduce);
             resetRoomUnreadMessage(userId, roomId);
+
+            // Gửi cho các phiên/thiết bị khác của người dùng để cập nhật lại
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("unread_updated", InboxUnreadUpdatePayload.builder()
+                            .roomId(roomId)
+                            .unreadCount(-countToReduce)
+                            .build());
         }
     }
 

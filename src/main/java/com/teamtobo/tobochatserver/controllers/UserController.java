@@ -85,14 +85,14 @@ public class UserController {
     public ApiResponse<PageResponse<FriendResponse>> getMyFriendList(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) String roomId,
-            @RequestParam(defaultValue = "0", required = false) String cursor,
+            @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
 
         String userId = jwt.getSubject();
 
         return ApiResponse.<PageResponse<FriendResponse>>builder()
-                .result(contactService.getFriends(userId, roomId, cursor, limit))
+                .result(userService.getFriends(userId, roomId, cursor, limit))
                 .build();
     }
 
