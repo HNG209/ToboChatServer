@@ -39,7 +39,8 @@ public class CallEventHandler {
 
                 String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
                 socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("incoming_call", new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId)));
+                        .sendEvent("incoming_call",
+                                new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId), event.getIsVideoCall()));
 
                 log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
             }

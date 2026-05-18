@@ -19,6 +19,7 @@ public class CallSessionManager {
         private Instant startTime;
         private String initiatorId;
         private Set<String> participants = ConcurrentHashMap.newKeySet();
+        private boolean isVideoCall = false;
         private boolean isAnswered = false;
 
         private int totalMembers;
@@ -36,7 +37,7 @@ public class CallSessionManager {
     private final Map<String, CallSession> activeCalls = new ConcurrentHashMap<>();
 
     // Khi có người yêu cầu gọi
-    public void initCall(String roomId, String callerId, int totalMembers) {
+    public void initCall(String roomId, String callerId, int totalMembers, boolean isVideoCall) {
         CallSession session = activeCalls.computeIfAbsent(roomId, k -> new CallSession());
 
         // Chỉ gán người khởi tạo ở lần đầu tiên tạo phòng
@@ -44,6 +45,8 @@ public class CallSessionManager {
             session.setInitiatorId(callerId);
             session.setTotalMembers(totalMembers);
         }
+
+        session.setVideoCall(isVideoCall);
         session.getParticipants().add(callerId);
     }
 
@@ -129,5 +132,11 @@ public class CallSessionManager {
 
     public boolean isCallActive(String roomId) {
         return activeCalls.containsKey(roomId);
+    }
+    public boolean isVideoCall(String roomId) {
+        CallSession session = activeCalls.get(roomId);
+
+        // Nếu session tồn tại thì trả về giá trị thực tế, ngược lại mặc định là false
+        return session != null && session.isVideoCall();
     }
 }

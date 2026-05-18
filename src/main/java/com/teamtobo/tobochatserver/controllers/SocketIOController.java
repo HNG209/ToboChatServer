@@ -81,20 +81,21 @@ public class SocketIOController {
         server.addEventListener("request_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
+            Boolean isVideoCall = data.getIsVideoCall();
 
             User caller = userService.getUserById(callerId);
             Room room = roomService.getRoomById(roomId, false);
-            log.info("Started call, room info {}", room);
 
-            log.info("User [{}] đang gọi vào phòng [{}]", caller.getName(), roomId);
+            log.info("User [{}] đang gọi vào phòng [{}], cuộc gọi video: {}", caller.getName(), roomId, isVideoCall);
 
             // Tạo Token cho người gọi và trả về ngay để họ vào phòng LiveKit
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
-            client.sendEvent("call_started", new CallResponse(callerToken, roomId));
+            client.sendEvent("call_started", new CallResponse(callerToken, roomId, isVideoCall));
             int totalMembers = (room != null) ? room.getMemberCount() : 2;
-            callSessionManager.initCall(roomId, callerId, totalMembers);
 
-            eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken));
+            callSessionManager.initCall(roomId, callerId, totalMembers, isVideoCall);
+
+            eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken, isVideoCall));
         });
 
         server.addEventListener("accept_call", CallRequest.class, (client, data, ack) -> {
@@ -117,7 +118,7 @@ public class SocketIOController {
                 String token = callService.generateCallToken(roomId, user.getName(), userId);
 
                 // Gửi Token VỀ RIÊNG MÁY CỦA NGƯỜI XIN VÀO (client.sendEvent)
-                client.sendEvent("call_joined", new CallResponse(token, roomId));
+                client.sendEvent("call_joined", new CallResponse(token, roomId, data.getIsVideoCall()));
             } else {
                 // Báo lỗi nếu họ bấm lúc cuộc gọi vừa mới tắt xong
                 client.sendEvent("call_error", "Cuộc gọi này đã kết thúc.");
@@ -127,6 +128,7 @@ public class SocketIOController {
         server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
+            boolean isVideoCall = callSessionManager.isVideoCall(roomId);
 
             // Xử lý rời cuộc gọi
             CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
@@ -159,6 +161,7 @@ public class SocketIOController {
             if (result.getStatus().equals("ENDED")) {
                 log.info("Cuộc gọi phòng [{}] kết thúc, thời lượng: {}s", roomId, result.getDuration());
                 widgetMetadata.put("duration", String.valueOf(result.getDuration()));
+                widgetMetadata.put("isVideoCall", isVideoCall ? "true" : "false");
             } else {
                 log.info("Cuộc gọi phòng [{}] bị nhỡ", roomId);
             }
