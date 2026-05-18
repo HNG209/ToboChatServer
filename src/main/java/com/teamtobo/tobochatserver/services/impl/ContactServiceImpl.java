@@ -75,16 +75,12 @@ public class ContactServiceImpl implements ContactService {
         if (userId.equals(otherId)) {
             return FriendStatus.SELF;
         }
-        if (userNodeRepository.isFriend(userId, otherId)) {
-            return FriendStatus.FRIEND;
+        String statusStr = userNodeRepository.getFriendStatus(userId, otherId);
+
+        if (statusStr == null) {
+            return FriendStatus.STRANGER;
         }
-        if (userNodeRepository.hasSentRequest(userId, otherId)) {
-            return FriendStatus.SENT;
-        }
-        if (userNodeRepository.hasSentRequest(otherId, userId)) {
-            return FriendStatus.PENDING;
-        }
-        return FriendStatus.STRANGER;
+        return FriendStatus.valueOf(statusStr);
     }
 
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {

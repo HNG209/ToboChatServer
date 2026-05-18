@@ -26,9 +26,15 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "DELETE r")
     void deleteFriendRequest (String userId, String otherId);
 
-    @Query("MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) RETURN count(r) > 0")
-    boolean isFriend(String userId, String otherId);
-
-    @Query("MATCH (u1:User {id: $userId})-[r:SEND_REQUEST]->(u2:User {id: $otherId}) RETURN count(r) > 0")
-    boolean hasSentRequest(String userId, String otherId);
+    @Query("OPTIONAL MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) " +
+            "OPTIONAL MATCH (u1_req:User {id: $userId})-[s:SEND_REQUEST]->(u2_req:User {id: $otherId}) " +
+            "OPTIONAL MATCH (u1_pen:User {id: $userId})<-[p:SEND_REQUEST]-(u2_pen:User {id: $otherId}) " +
+            "RETURN " +
+            "  CASE " +
+            "    WHEN r IS NOT NULL THEN 'FRIEND' " +
+            "    WHEN s IS NOT NULL THEN 'SENT' " +
+            "    WHEN p IS NOT NULL THEN 'PENDING' " +
+            "    ELSE 'STRANGER' " +
+            "  END AS status")
+    String getFriendStatus(String userId, String otherId);
 }
