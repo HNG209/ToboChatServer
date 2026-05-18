@@ -37,4 +37,20 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "    ELSE 'STRANGER' " +
             "  END AS status")
     String getFriendStatus(String userId, String otherId);
+
+    // Lời mời kết bạn ĐÃ GỬI (userId -> target)
+    @Query("MATCH (u:User {id: $userId})-[r:SEND_REQUEST]->(target:User) " +
+            "RETURN target " +
+            "ORDER BY r.createAt DESC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<UserNode> findSentRequests(String userId, Pageable pageable);
+
+    // Lời mời kết bạn ĐÃ NHẬN / PENDING (sender -> userId)
+    @Query("MATCH (u:User {id: $userId})<-[r:SEND_REQUEST]-(sender:User) " +
+            "RETURN sender " +
+            "ORDER BY r.createAt DESC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<UserNode> findPendingRequests(String userId, Pageable pageable);
 }

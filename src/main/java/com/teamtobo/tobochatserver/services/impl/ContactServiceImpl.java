@@ -84,6 +84,35 @@ public class ContactServiceImpl implements ContactService {
     }
 
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
-        return null;
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<UserNode> requestNodes;
+        if (type == FriendRequestType.SENT) {
+            requestNodes = userNodeRepository.findSentRequests(userId, pageable);
+        } else {
+            requestNodes = userNodeRepository.findPendingRequests(userId, pageable);
+        }
+
+        boolean hasNext = requestNodes.size() > pageable.getPageSize();
+        List<UserNode> currentNodes = hasNext ? requestNodes.subList(0, limit) : requestNodes;
+
+        List<String> userIds = currentNodes.stream().map(UserNode::getId).toList();
+        Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
+
+        List<FriendRequestResponse> items = currentNodes.stream().map(node -> {
+            UserResponse user = userResponseMap.get(node.getId());
+
+            return FriendRequestResponse.builder()
+                    .id(node.getId())
+                    .name(user != null ? user.getName() : "Người dùng ToboChat")
+                    .avatarUrl(user != null ? user.getAvatarUrl() : null)
+                    .build();
+        }).toList();
+
+        return PageResponse.<FriendRequestResponse>builder()
+                .items(items)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
     }
 }
