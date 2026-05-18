@@ -12,6 +12,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserService;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -51,20 +52,23 @@ public class ContactServiceImpl implements ContactService {
                 .build();
     }
 
+    @Override
+    @Transactional
     public void sendFriendRequest(String userId, String otherId) {
         if (userId.equals(otherId)) {
             throw new AppException(ErrorCode.CANNOT_ADD_SELF);
         }
 
         FriendStatus status = this.getFriendStatus(userId, otherId);
+
         if (status == FriendStatus.FRIEND) {
             throw new AppException(ErrorCode.ALREADY_FRIENDS);
         }
+
         if (status == FriendStatus.PENDING || status == FriendStatus.SENT) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
-
-        userNodeRepository.createFriendRequest(userId, otherId); /// Lỗi
+        userNodeRepository.createFriendRequest(userId, otherId);
     }
 
     public void cancelFriendRequest(String userId, String otherId) {

@@ -37,6 +37,7 @@ public class ContactController {
                 .build();
     }
 
+    @Operation(summary = "Lấy danh sách lời mời kết bạn")
     @GetMapping("/friend-requests")
     public ApiResponse<PageResponse<FriendRequestResponse>> getFriendRequests(
             @AuthenticationPrincipal Jwt jwt,
