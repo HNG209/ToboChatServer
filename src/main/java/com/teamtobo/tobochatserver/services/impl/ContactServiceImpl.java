@@ -64,7 +64,7 @@ public class ContactServiceImpl implements ContactService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
 
-        userNodeRepository.createFriendRequest(userId, otherId);
+        userNodeRepository.createFriendRequest(userId, otherId); /// Lỗi
     }
 
     public void cancelFriendRequest(String userId, String otherId) {
