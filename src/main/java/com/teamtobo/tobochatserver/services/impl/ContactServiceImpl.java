@@ -1,9 +1,14 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
+import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.nodes.UserNode;
+import com.teamtobo.tobochatserver.exception.AppException;
+import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -44,5 +49,45 @@ public class ContactServiceImpl implements ContactService {
                                 .build()).toList())
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
                 .build();
+    }
+
+    public void sendFriendRequest(String userId, String otherId) {
+        if (userId.equals(otherId)) {
+            throw new AppException(ErrorCode.CANNOT_ADD_SELF);
+        }
+
+        FriendStatus status = this.getFriendStatus(userId, otherId);
+        if (status == FriendStatus.FRIEND) {
+            throw new AppException(ErrorCode.ALREADY_FRIENDS);
+        }
+        if (status == FriendStatus.PENDING || status == FriendStatus.SENT) {
+            throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
+        }
+
+        userNodeRepository.createFriendRequest(userId, otherId);
+    }
+
+    public void cancelFriendRequest(String userId, String otherId) {
+        userNodeRepository.deleteFriendRequest(userId, otherId);
+    }
+
+    public FriendStatus getFriendStatus(String userId, String otherId) {
+        if (userId.equals(otherId)) {
+            return FriendStatus.SELF;
+        }
+        if (userNodeRepository.isFriend(userId, otherId)) {
+            return FriendStatus.FRIEND;
+        }
+        if (userNodeRepository.hasSentRequest(userId, otherId)) {
+            return FriendStatus.SENT;
+        }
+        if (userNodeRepository.hasSentRequest(otherId, userId)) {
+            return FriendStatus.PENDING;
+        }
+        return FriendStatus.STRANGER;
+    }
+
+    public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
+        return null;
     }
 }

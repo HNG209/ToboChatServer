@@ -16,4 +16,19 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "SKIP :#{#pageable.offset} " +
             "LIMIT :#{#pageable.pageSize + 1}")
     List<UserNode> findAllFriends(String userId, Pageable pageable);
+
+    @Query("MATCH (u1: User {id: $userId}), (u2: User {id: $otherId})" +
+            "MERGE (u1) -[r:SEND_REQUEST]-> (u2)" +
+            "ON CREATE SET r.createAt = timestamp()")
+    void createFriendRequest (String userId, String otherId);
+
+    @Query ("MATCH (u1: User {id: $userId}) -[r:SEND_REQUEST]-> (u2: User {id: $otherId})" +
+            "DELETE r")
+    void deleteFriendRequest (String userId, String otherId);
+
+    @Query("MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) RETURN count(r) > 0")
+    boolean isFriend(String userId, String otherId);
+
+    @Query("MATCH (u1:User {id: $userId})-[r:SEND_REQUEST]->(u2:User {id: $otherId}) RETURN count(r) > 0")
+    boolean hasSentRequest(String userId, String otherId);
 }
