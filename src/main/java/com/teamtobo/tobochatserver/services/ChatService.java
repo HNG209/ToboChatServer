@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.MessageReaction;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 
 import java.util.List;
@@ -13,6 +14,7 @@ public interface ChatService {
     MessageResponse getMessage(String messageId, String roomId);
     Map<String, Message> getMessagesMapByIds(List<String> messageIds, String roomId);
     void addReaction(String userId, String roomId, String messageId, ReactionType reactionType);
+    Map<String, MessageReaction> getMyReactionsMapByIds(String userId, List<String> messageIds);
     PageResponse<MessageReactionResponse> getMessageReactions(String messageId, String roomId, String cursor, int limit);
     Message getMessageById(String messageId, String roomId);
     PageResponse<MessageResponse> getMessages(String userId, String roomId, String cursor, int limit, String direction);

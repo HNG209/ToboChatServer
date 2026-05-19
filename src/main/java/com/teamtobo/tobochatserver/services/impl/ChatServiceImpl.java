@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
+import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -231,8 +232,11 @@ public class ChatServiceImpl implements ChatService {
 
         // Thêm userId của message gốc cho batch get
         List<String> userIds = new ArrayList<>();
+        List<String> messageIds = new ArrayList<>();
+
         for (Message message : items) {
             userIds.add(message.getSenderId());
+            messageIds.add(message.getSk().replace("MSG#", ""));
         }
 
         // Thêm luôn userId của replied message
@@ -240,6 +244,9 @@ public class ChatServiceImpl implements ChatService {
 
         // Batch get user
         Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
+
+        // Batch get reaction
+        Map<String, MessageReaction> messageReactionMap = getMyReactionsMapByIds(userId, messageIds);
 
         // DTO mapping
         List<MessageResponse> messageResponses = items.stream()
@@ -258,6 +265,8 @@ public class ChatServiceImpl implements ChatService {
                             .roomId(roomId)
                             .build() : null;
 
+                    MessageReaction myReaction = messageReactionMap.getOrDefault(messageId, null);
+
                     return MessageResponse.builder()
                             .id(messageId)
                             // Tin nhắn đã thu hồi ko cần trả về content và replyTo
@@ -268,6 +277,7 @@ public class ChatServiceImpl implements ChatService {
                             .attachments(isRevoked ? null : msg.getAttachments())
                             .messageStatus(msg.getMessageStatus())
                             .reactionsSummary(msg.getReactionsSummary())
+                            .myReactions(myReaction != null ? myReaction.getReactions() : null)
                             .messageType(msg.getMessageType())
                             .action(msg.getAction())
                             .metadata(msg.getMetadata())
@@ -404,6 +414,43 @@ public class ChatServiceImpl implements ChatService {
                 throw e;
             }
         }
+    }
+
+    @Override
+    public Map<String, MessageReaction> getMyReactionsMapByIds(String userId, List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // Loại bỏ các ID trùng lặp
+        List<String> uniqueIds = messageIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, MessageReaction> messageReactionMap = new HashMap<>();
+
+        int batchSize = 100;
+        for (int i = 0; i < uniqueIds.size(); i += batchSize) {
+            List<String> chunk = uniqueIds.subList(i, Math.min(uniqueIds.size(), i + batchSize));
+
+            ReadBatch.Builder<MessageReaction> readBatchBuilder = ReadBatch.builder(MessageReaction.class)
+                    .mappedTableResource(messageReactionTable);
+
+            chunk.forEach(id -> readBatchBuilder.addGetItem(Key.builder()
+                    .partitionValue("MSG#" + id)
+                    .sortValue("REACTION#" + userId)
+                    .build()));
+
+            BatchGetResultPageIterable batchResults = enhancedClient.batchGetItem(r -> r.addReadBatch(readBatchBuilder.build()));
+
+            // Đọc kết quả của lô hiện tại và map vào kết quả
+            batchResults.resultsForTable(messageReactionTable)
+                    .forEach(messageReaction -> messageReactionMap
+                            .put(messageReaction.getPk().replace("MSG#", ""), messageReaction));
+        }
+
+        return messageReactionMap;
     }
 
     @Override
