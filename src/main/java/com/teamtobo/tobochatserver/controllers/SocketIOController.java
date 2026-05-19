@@ -101,6 +101,12 @@ public class SocketIOController {
         server.addEventListener("accept_call", CallRequest.class, (client, data, ack) -> {
             String userId = client.get("userId");
             log.info("Phòng [{}] đã có người bắt máy", data.getRoomId());
+
+            // Tắt popup khi người dùng có nhiều thiết bị
+            if (userId != null) {
+                server.getRoomOperations(userId).sendEvent("call_accepted", data);
+            }
+
             callSessionManager.markAsAnswered(data.getRoomId(), userId);
         });
 
