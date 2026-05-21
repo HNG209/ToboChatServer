@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
@@ -118,5 +119,19 @@ public class ContactServiceImpl implements ContactService {
                 .items(items)
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
                 .build();
+    }
+
+    @Override
+    public void responseFriendRequest(String userId, FriendAcceptRequest request) {
+        String senderId = request.getFromUser();
+
+        FriendStatus currentStatus = this.getFriendStatus(userId, senderId);
+        if (currentStatus != FriendStatus.PENDING) return;
+
+        userNodeRepository.deleteFriendRequest(senderId, userId);
+
+        if (!request.isAccepted()) return;
+
+        userNodeRepository.createFriend(senderId, userId);
     }
 }

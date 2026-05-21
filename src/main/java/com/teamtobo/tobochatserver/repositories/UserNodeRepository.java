@@ -23,9 +23,15 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "ON CREATE SET r.createAt = timestamp()")
     void createFriendRequest(String userId, String otherId);
 
-    @Query ("MATCH (u1: User {id: $userId}) -[r:SEND_REQUEST]-> (u2: User {id: $otherId})" +
+    @Query("MERGE (u1:User {id: $userId}) " +
+            "MERGE (u2:User {id: $otherId}) " +
+            "MERGE (u1)-[r:FRIEND]->(u2) " +
+            "ON CREATE SET r.createAt = timestamp()")
+    void createFriend(String userId, String otherId);
+
+    @Query ("MATCH (u1: User {id: $userId})-[r:SEND_REQUEST]-(u2: User {id: $otherId})" +
             "DELETE r")
-    void deleteFriendRequest (String userId, String otherId);
+    void deleteFriendRequest(String userId, String otherId);
 
     @Query("OPTIONAL MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) " +
             "OPTIONAL MATCH (u1_req:User {id: $userId})-[s:SEND_REQUEST]->(u2_req:User {id: $otherId}) " +

@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;

@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.services;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
@@ -17,4 +18,5 @@ public interface ContactService {
             String cursor,
             int limit
     );
+    void responseFriendRequest(String userId, FriendAcceptRequest request);
 }

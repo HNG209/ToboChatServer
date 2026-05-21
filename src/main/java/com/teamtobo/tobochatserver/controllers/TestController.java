@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Test Contact Controller")
@@ -77,5 +79,15 @@ public class TestController {
         return ApiResponse.<FriendStatus>builder()
                 .result(contactService.getFriendStatus(userId, otherId))
                 .build();
+    }
+
+    @Operation(summary = "Phản hồi lời mời kết bạn (Chấp nhận / Từ chối)")
+    @PatchMapping("/response")
+    public ResponseEntity<Void> responseFriendRequest(
+            @RequestParam String userId,
+            @RequestBody FriendAcceptRequest request) {
+        contactService.responseFriendRequest(userId, request);
+
+        return ResponseEntity.noContent().build();
     }
 }
