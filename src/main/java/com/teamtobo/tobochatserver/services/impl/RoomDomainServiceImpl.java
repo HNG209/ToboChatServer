@@ -220,7 +220,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomMember target = getMember(roomId, memberId);
         User targetUser = userService.getUserById(memberId); // Lấy tên của người dùng bị xoá gán vào tin nhắn hệ thống
 
-        if (remover.getRole() == MemberRole.VICE_ADMIN && target.getRole() != MemberRole.MEMBER) {
+        // Cấp trên mới xoá được cấp dưới
+        if (!remover.getRole().isHigherThan(target.getRole())) {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
         }
 
