@@ -43,12 +43,16 @@ public class ContactServiceImpl implements ContactService {
         Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
 
         return PageResponse.<FriendResponse>builder()
-                .items(currentFriends.stream().map(friend ->
-                        FriendResponse.builder()
-                                .id(friend.getId())
-                                .name(userResponseMap.get(friend.getId()).getName())
-                                .avatarUrl(userResponseMap.get(friend.getId()).getAvatarUrl())
-                                .build()).toList())
+                .items(currentFriends.stream().map(friend -> {
+                    if (userResponseMap.get(friend.getId()) == null)
+                        return FriendResponse.builder()
+                            .id(friend.getId()).build();
+                    return FriendResponse.builder()
+                            .id(friend.getId())
+                            .name(userResponseMap.get(friend.getId()).getName())
+                            .avatarUrl(userResponseMap.get(friend.getId()).getAvatarUrl())
+                            .build();
+                }).toList())
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
                 .build();
     }
