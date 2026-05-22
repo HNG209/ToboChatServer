@@ -5,9 +5,7 @@ import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 
@@ -19,7 +17,7 @@ public interface RoomDomainService {
     List<FriendResponse> addMemberToGroup(String roomId, String inviterId, List<String> targetUserIds);
     String getOrCreateDMRoom(String userId, String otherId);
     void approveMember(String roomId, String adminId, String targetUserId, boolean accept);
-    void updateMember(String roomId, String targetUserId, MemberUpdateRequest request);
+    void updateMemberRole(String roomId, String userId, String targetUserId, MemberUpdateRequest request);
     void removeMember(String roomId, String removerId, String memberId);
     void disbandGroup(String roomId);
 //    PageResponse<GroupAcceptRequest> getSentInvites(String roomId, String cursor, int limit);

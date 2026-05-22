@@ -17,4 +17,7 @@ public class MemberPermissionsResponse {
     boolean canUpdateMetadata;
     boolean canDisbandGroup;
     boolean canApproveMember;
+    boolean canUpdateMemberRole;
+    boolean canRemoveMember;
+    boolean canGetPendingRequests;
 }

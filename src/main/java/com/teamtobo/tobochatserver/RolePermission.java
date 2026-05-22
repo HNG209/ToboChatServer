@@ -17,15 +17,12 @@ public class RolePermission {
                     MemberPermission.GET_SENT_REQUESTS,
                     MemberPermission.GET_PENDING_REQUESTS,
                     MemberPermission.APPROVE_MEMBER,
-                    MemberPermission.UPDATE_GROUP,
-                    MemberPermission.SEND_MESSAGE,
-                    MemberPermission.LEAVE_GROUP
+                    MemberPermission.SEND_MESSAGE
             ),
 
             MemberRole.MEMBER, Set.of(
                     MemberPermission.SEND_MESSAGE,
-                    MemberPermission.ADD_MEMBER,
-                    MemberPermission.LEAVE_GROUP
+                    MemberPermission.ADD_MEMBER
             )
     );
 

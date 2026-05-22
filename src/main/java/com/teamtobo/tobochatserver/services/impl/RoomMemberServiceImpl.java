@@ -580,11 +580,15 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         if (member.getRole() == MemberRole.ADMIN) {
             permissions.setCanUpdateRoomSettings(true);
             permissions.setCanDisbandGroup(true);
+            permissions.setCanRemoveMember(true);
+            permissions.setCanUpdateMemberRole(true);
         }
 
-        // Duyệt thành viên nếu là trưởng hoặc phó nhóm
-        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN)
+        // Xem danh sách cần duyệt và duyệt thành viên nếu là trưởng hoặc phó nhóm
+        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN) {
             permissions.setCanApproveMember(true);
+            permissions.setCanGetPendingRequests(true);
+        }
 
         // Nếu không phải là member hoặc phòng đã bật cho phép thêm thành viên
         if (member.getRole() != MemberRole.MEMBER || room.isAllowAddMember())

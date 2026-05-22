@@ -105,16 +105,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
         Room room = roomService.getRoomById(roomId, true);
 
-        //phải là group
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
-        //group có bật duyệt không
-        if (!room.isApproveMember()) {
-            throw new AppException(ErrorCode.ROOM_NOT_REQUIRE_APPROVAL);
-        }
-
         String pk = "ROOM#" + roomId;
         String sk = "PENDING#" + targetUserId;
 
@@ -201,12 +191,27 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         // Trả về cho người thêm trạng thái của từng bạn bè khi đã thêm
         return friendResponseList;
     }
+
     @Override
-    public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
+    public void updateMemberRole(String roomId, String userId, String memberId, MemberUpdateRequest request) {
         RoomMember targetMember = getMember(roomId, memberId);
         targetMember.setRole(request.getMemberRole());
         targetMember.setUpdatedAt(Instant.now().toString());
         roomMemberTable.updateItem(targetMember);
+
+        UserResponse userResponse = userService.getUserProfile(memberId);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.MEMBER_ROLE_UPDATED,
+                        Map.of("updatedMemberId", memberId,
+                                "updatedMemberName", userResponse.getName(),
+                                "newRole", request.getMemberRole().name())
+                )
+        );
     }
 
     @Override
@@ -214,10 +219,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomMember remover = getMember(roomId, removerId);
         RoomMember target = getMember(roomId, memberId);
         User targetUser = userService.getUserById(memberId); // Lấy tên của người dùng bị xoá gán vào tin nhắn hệ thống
-
-        if (remover.getRole() == MemberRole.MEMBER) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
 
         if (remover.getRole() == MemberRole.VICE_ADMIN && target.getRole() != MemberRole.MEMBER) {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
