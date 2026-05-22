@@ -1,10 +1,11 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
-import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
+import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
@@ -20,18 +21,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.Page;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -88,6 +83,22 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomTable.updateItem(room);
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        RoomUpdatePayload.builder()
+                                .allowSendMessage(request.getAllowSendMessage())
+                                .allowAddMember(request.getAllowAddMember())
+                                .allowUpdateMetadata(request.getAllowUpdateMetadata())
+                                .approveMember(request.getApproveMember())
+                                .build()
+                )
+        );
+
+        eventPublisher.publishEvent(
+                new MemberUpdateEvent(roomId, room)
+        );
     }
 
     @Override
@@ -796,8 +807,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         eventPublisher.publishEvent(
                 new RoomUpdateEvent(
                         roomId,
-                        null,
-                        avatarUrl
+                        RoomUpdatePayload.builder()
+                                .newRoomAvatar(avatarUrl)
+                                .build()
                 )
         );
     }
@@ -826,8 +838,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         eventPublisher.publishEvent(
                 new RoomUpdateEvent(
                         roomId,
-                        roomName,
-                        null
+                        RoomUpdatePayload.builder()
+                                .newRoomName(roomName)
+                                .build()
                 )
         );
     }

@@ -46,6 +46,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Value("${aws.dynamodb.tableName:ToboChatTable}")
     private String tableName;
+
     @Override
     public PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit) {
         if (roomId == null || roomId.trim().isEmpty()) {
@@ -309,7 +310,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                         .id(lm.getMessageId())
                         .roomId(roomId)
                         .content(lm.getContent())
-                         .createdAt(lm.getCreatedAt())
+                        .createdAt(lm.getCreatedAt())
                         .build());
             }
 
@@ -401,7 +402,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             RoomMember member = roomMemberTable.getItem(key);
 
-            return (member != null)? member.getUnreadMessages() : 0;
+            return (member != null) ? member.getUnreadMessages() : 0;
         } catch (Exception e) {
             return 0;
         }
@@ -572,9 +573,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     }
 
     @Override
-    public RoomMemberResponse getMyProfile(String userId, String roomId) {
-        RoomMemberResponse member = getMember(userId, roomId);
-        Room room = roomService.getRoomById(roomId, false);
+    public MemberPermissionsResponse buildMemberPermission(RoomMemberResponse member, Room room) {
         MemberPermissionsResponse permissions = new MemberPermissionsResponse(); // mặc định false cho các quyền
 
         // Nếu là admin thì cho phép update settings phòng và giải tán
@@ -599,7 +598,16 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         if (member.getRole() != MemberRole.MEMBER || room.isAllowUpdateMetadata())
             permissions.setCanUpdateMetadata(true);
 
-        member.setPermissions(permissions);
+        return permissions;
+    }
+
+    @Override
+    public RoomMemberResponse getMyProfile(String userId, String roomId) {
+        RoomMemberResponse member = getMember(userId, roomId);
+        Room room = roomService.getRoomById(roomId, false);
+
+        member.setPermissions(buildMemberPermission(member, room));
+
         return member;
     }
 }
