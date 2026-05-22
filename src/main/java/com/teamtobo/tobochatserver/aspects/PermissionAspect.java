@@ -64,22 +64,6 @@ public class PermissionAspect {
         return joinPoint.proceed();
     }
 
-    @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireAdmin)")
-    public Object checkAdmin(ProceedingJoinPoint joinPoint) throws Throwable {
-        String userId = getCurrentUserId();
-        String roomId = extractRoomId(joinPoint);
-
-        RoomMember member = roomMemberService.getMemberById(userId, roomId);
-
-        if(member == null)
-            throw new AppException(ErrorCode.NOT_IN_ROOM);
-
-        if(member.getRole() != MemberRole.ADMIN)
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-
-        return joinPoint.proceed();
-    }
-
     @Around("@annotation(requirePermission)")
     public Object checkPermission(ProceedingJoinPoint joinPoint,
                                   RequireMemberPermission requirePermission) throws Throwable {
