@@ -90,4 +90,14 @@ public class TestController {
 
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "Phản hồi lời mời kết bạn (Chấp nhận / Từ chối)")
+    @DeleteMapping("{userId}/friends/{otherId}")
+    public ResponseEntity<Void> deleteFriend(
+            @PathVariable String userId,
+            @PathVariable String otherId) {
+        contactService.deleteFriend(userId, otherId);
+
+        return ResponseEntity.noContent().build();
+    }
 }

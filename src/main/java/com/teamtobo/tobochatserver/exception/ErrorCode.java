@@ -92,7 +92,8 @@ public enum ErrorCode {
     PENDING_NOT_FOUND(50006, "[50006] Pending request not found", HttpStatus.NOT_FOUND),
     CANNOT_DISABLE_APPROVAL_WHEN_PENDING(50007,"[50007] Cannot disable approval when pending requests exist", HttpStatus.BAD_REQUEST),
     ADD_MEMBER_ERROR(50008, "[50008] Add member error", HttpStatus.BAD_REQUEST),
-    GROUP_PENDING_ERROR(50009, "[50009] Group pending error", HttpStatus.BAD_REQUEST ),
+    GROUP_PENDING_ERROR(50009, "[50009] Group pending error", HttpStatus.BAD_REQUEST),
+    NOT_FRIEND(777888, "[777888] Not friend", HttpStatus.BAD_REQUEST)
     ;
 
 

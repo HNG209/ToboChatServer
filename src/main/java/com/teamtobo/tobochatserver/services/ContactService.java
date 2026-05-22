@@ -19,4 +19,5 @@ public interface ContactService {
             int limit
     );
     void responseFriendRequest(String userId, FriendAcceptRequest request);
+    void deleteFriend(String userId, String otherId);
 }

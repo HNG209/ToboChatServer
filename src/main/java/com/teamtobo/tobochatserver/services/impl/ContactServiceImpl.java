@@ -138,4 +138,12 @@ public class ContactServiceImpl implements ContactService {
 
         userNodeRepository.createFriend(senderId, userId);
     }
+
+    @Override
+    public void deleteFriend(String userId, String otherId) {
+        FriendStatus currentStatus = this.getFriendStatus(userId, otherId);
+        if(currentStatus != FriendStatus.FRIEND) throw new AppException(ErrorCode.NOT_FRIEND);
+
+        userNodeRepository.deleteFriend(userId, otherId);
+    }
 }

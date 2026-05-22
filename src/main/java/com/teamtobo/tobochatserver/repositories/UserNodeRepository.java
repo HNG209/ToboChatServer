@@ -33,6 +33,10 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "DELETE r")
     void deleteFriendRequest(String userId, String otherId);
 
+    @Query ("MATCH (u1: User {id: $userId})-[r:FRIEND]-(u2: User {id: $otherId})" +
+            "DELETE r")
+    void deleteFriend(String userId, String otherId);
+
     @Query("OPTIONAL MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) " +
             "OPTIONAL MATCH (u1_req:User {id: $userId})-[s:SEND_REQUEST]->(u2_req:User {id: $otherId}) " +
             "OPTIONAL MATCH (u1_pen:User {id: $userId})<-[p:SEND_REQUEST]-(u2_pen:User {id: $otherId}) " +
