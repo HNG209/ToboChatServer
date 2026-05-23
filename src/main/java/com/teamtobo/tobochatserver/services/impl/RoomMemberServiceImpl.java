@@ -305,14 +305,8 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             // Map Latest Message
             LatestMessage lm = i.getLatestMessage();
-            if (lm != null) {
-                roomResponse.setLatestMessage(MessageResponse.builder()
-                        .id(lm.getMessageId())
-                        .roomId(roomId)
-                        .content(lm.getContent())
-                        .createdAt(lm.getCreatedAt())
-                        .build());
-            }
+            if (lm != null)
+                roomResponse.setLatestMessage(lm);
 
             // Map Metadata
             if (roomId.contains("_")) {
@@ -489,8 +483,41 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             if (message.getMessageStatus() != null)
                 latestMessageMap.put("messageStatus", AttributeValue.builder().s(message.getMessageStatus().name()).build());
 
-            int attachmentSize = (message.getAttachments() != null) ? message.getAttachments().size() : 0;
-            latestMessageMap.put("attachmentSize", AttributeValue.builder().n(String.valueOf(attachmentSize)).build());
+            if (message.getMessageType() != null)
+                latestMessageMap.put("messageType", AttributeValue.builder().s(message.getMessageType().name()).build());
+
+            // Phân loại và đếm số lượng media / file
+            int mediaSize = 0;
+            int fileSize = 0;
+
+            if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
+                for (var attachment : message.getAttachments()) {
+                    String contentType = attachment.getContentType();
+
+                    if (contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/"))) {
+                        mediaSize++;
+                    } else {
+                        fileSize++;
+                    }
+                }
+            }
+
+            latestMessageMap.put("mediaSize", AttributeValue.builder().n(String.valueOf(mediaSize)).build());
+            latestMessageMap.put("fileSize", AttributeValue.builder().n(String.valueOf(fileSize)).build());
+
+            // Lưu Metadata (Chuyển đổi Map<String, String> sang Map<String, AttributeValue>)
+            if (message.getMetadata() != null && !message.getMetadata().isEmpty()) {
+                Map<String, AttributeValue> metadataMap = new HashMap<>();
+                message.getMetadata().forEach((key, value) ->
+                        metadataMap.put(key, AttributeValue.builder().s(value).build())
+                );
+                latestMessageMap.put("metadata", AttributeValue.builder().m(metadataMap).build());
+            }
+
+            // Lưu Action
+            if (message.getAction() != null) {
+                latestMessageMap.put("action", AttributeValue.builder().s(message.getAction().name()).build());
+            }
 
             if (message.getCreatedAt() != null)
                 latestMessageMap.put("createdAt", AttributeValue.builder().s(message.getCreatedAt()).build());

@@ -2,12 +2,14 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
+import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -496,6 +498,7 @@ public class ChatServiceImpl implements ChatService {
         return new PageResponse<>(responses, nextCursor, null);
     }
 
+    // Lấy tin nhắn mới nhất từ góc nhìn của người dùng
     @Override
     public MessageResponse getLatestMessage(String userId, String roomId) {
         try {
@@ -546,6 +549,99 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
+    // Lấy tin nhắn mới nhất của phòng
+    @Override
+    public MessageResponse getRoomLatestMessage(String roomId) {
+        try {
+            String pk = "ROOM#" + roomId;
+
+            Key searchKey = Key.builder()
+                    .partitionValue(pk)
+                    .sortValue("MSG#")
+                    .build();
+
+            QueryConditional queryConditional = QueryConditional.sortBeginsWith(searchKey);
+
+            QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+                    .queryConditional(queryConditional)
+                    .scanIndexForward(false) // Sắp xếp từ mới nhất -> cũ nhất
+                    .limit(1) // Chỉ cần lấy đúng 1 dòng đầu tiên
+                    .build();
+
+            Page<Message> page = messageTable.query(request).stream().findFirst().orElse(null);
+
+            if (page != null && !page.items().isEmpty()) {
+                Message message = page.items().get(0);
+                boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
+
+                return MessageResponse.builder()
+                        .id(message.getSk().replaceFirst("^MSG#", ""))
+                        .roomId(roomId)
+                        .user(userService.getUserProfile(message.getSenderId())) // Cần thiết cho buildLatestMessage
+                        .content(isRevoked ? null : message.getContent())
+                        .attachments(isRevoked ? null : message.getAttachments())
+                        .messageStatus(message.getMessageStatus())
+                        .createdAt(message.getCreatedAt())
+                        .messageType(message.getMessageType())
+                        .metadata(message.getMetadata())
+                        .action(message.getAction())
+                        .build();
+            }
+
+            return null; // Không có tin nhắn nào trong phòng
+
+        } catch (Exception e) {
+            log.error("Lỗi khi lấy tin nhắn mới nhất (tuyệt đối) của phòng {}: {}", roomId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public LatestMessage buildLatestMessage(MessageResponse message) {
+        int mediaSize = 0;
+        int fileSize = 0;
+
+        if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
+            for (var attachment : message.getAttachments()) {
+                String contentType = attachment.getContentType();
+
+                if (contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/"))) {
+                    mediaSize++;
+                } else {
+                    fileSize++;
+                }
+            }
+        }
+
+        return LatestMessage.builder()
+                .roomId(message.getRoomId())
+                .messageId(message.getId())
+                .userId(message.getUser().getId())
+                .messageStatus(message.getMessageStatus())
+                .metadata(message.getMetadata())
+                .fileSize(fileSize)
+                .mediaSize(mediaSize)
+                .action(message.getAction())
+                .content(message.getContent())
+                .createdAt(message.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    public MessageResponse buildMessageResponse(Message message) {
+        return MessageResponse.builder()
+                .id(message.getSk().replace("MSG#", ""))
+                .messageStatus(message.getMessageStatus())
+                .roomId(message.getPk().replace("ROOM#", ""))
+                .action(message.getAction())
+                .attachments(message.getAttachments())
+                .createdAt(message.getCreatedAt())
+                .replyTo(MessageResponse.builder().id(message.getReplyTo()).build())
+                .metadata(message.getMetadata())
+                .messageType(message.getMessageType())
+                .build();
+    }
+
     private MessageResponse mapToResponse(Message message, String userId) {
         boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
 
@@ -578,8 +674,6 @@ public class ChatServiceImpl implements ChatService {
         try {
             String pk = "ROOM#" + roomId;
 
-            // 1. Tìm tin nhắn bằng Query thay vì getItem vì chúng ta không có timestamp trong SK
-            // Chúng ta query tất cả tin nhắn trong phòng và filter theo messageId
             QueryConditional queryConditional = QueryConditional.sortBeginsWith(
                     Key.builder()
                             .partitionValue(pk)
@@ -594,35 +688,32 @@ public class ChatServiceImpl implements ChatService {
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Tin nhắn không tồn tại"));
 
-            // 2. Check quyền (chỉ sender được quyền thu hồi)
             if (!message.getSenderId().equals(userId)) {
                 throw new RuntimeException("Không có quyền thu hồi");
             }
 
-            // 3. Nếu đã thu hồi rồi thì không làm gì thêm
             if (message.getMessageStatus() == MessageStatus.REVOKED) {
                 return;
             }
 
-            // 4. Update trạng thái tin nhắn thành REVOKED
             message.setMessageStatus(MessageStatus.REVOKED);
-            // Lưu ý: Không cần setContent ở Backend nếu Frontend đã xử lý hiển thị dựa trên status
             messageTable.updateItem(message);
 
-            // 5. Gửi sự kiện Socket cho tất cả thành viên trong phòng để cập nhật UI
-            List<String> memberIds = roomService.getMembersByRoomId(roomId);
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("message_revoked",
+                            Map.of(
+                                    "messageId", messageId,
+                                    "roomId", roomId
+                            ));
 
-            if (memberIds != null) {
-                for (String memberId : memberIds) {
-                    socketIOServer.getRoomOperations(memberId)
-                            .sendEvent("message_revoked",
-                                    Map.of(
-                                            "messageId", messageId,
-                                            "roomId", roomId
-                                    ));
-                }
-            }
+            MessageResponse latestMessage = getRoomLatestMessage(roomId);
 
+            // Nếu không phải là tin nhắn mới nhất thì không cập nhật inbox
+            if(!Objects.equals(latestMessage.getId(), messageId)) return;
+
+            eventPublisher.publishEvent(
+                    new InboxUpdateEvent(roomId, userId, buildMessageResponse(message))
+            );
         } catch (RuntimeException e) {
             log.error("Lỗi nghiệp vụ revoke message: {}", e.getMessage());
             throw e;

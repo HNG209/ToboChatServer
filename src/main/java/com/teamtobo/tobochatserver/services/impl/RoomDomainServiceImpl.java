@@ -156,7 +156,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             .approveMember(room.isApproveMember())
                             .memberCount(room.getMemberCount())
                             // Nếu phòng đã có tin nhắn trước đó
-                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                            .latestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(targetUserId, roomId)))
                             // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                             .build());
         } else {
@@ -448,7 +448,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Cập nhật real time cho người bên kia (otherId)
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
-        otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
+        otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(otherId, roomId)));
         socketIOServer.getRoomOperations(otherId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(otherRoomMetadata)
@@ -456,7 +456,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
-        myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(userId, roomId)));
         socketIOServer.getRoomOperations(userId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(myRoomMetadata)
@@ -650,7 +650,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                     .approveMember(room.isApproveMember())
                                     .memberCount(room.getMemberCount())
                                     // Nếu phòng đã có tin nhắn trước đó
-                                    .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                                    .latestMessage(chatService.buildLatestMessage(
+                                            chatService.getRoomLatestMessage(roomId)))
                                     // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                                     .build())
                             .inboxStatus(InboxStatus.ACTIVE)

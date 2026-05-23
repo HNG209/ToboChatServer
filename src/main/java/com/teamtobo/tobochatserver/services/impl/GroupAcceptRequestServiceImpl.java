@@ -232,8 +232,7 @@ public class GroupAcceptRequestServiceImpl implements GroupAcceptRequestService 
                     .roomName(room.getRoomName())
                     .roomType(room.getRoomType())
                     .memberCount(room.getMemberCount())
-                    // Lấy tin nhắn mới nhất của phòng hiện có perspective to userId
-                    .latestMessage(chatService.getLatestMessage(userId, roomId))
+                    .latestMessage(chatService.buildLatestMessage(chatService.getRoomLatestMessage(roomId)))
                     .avatarUrl(room.getAvatarUrl())
                     .build();
         } catch (Exception e) {
