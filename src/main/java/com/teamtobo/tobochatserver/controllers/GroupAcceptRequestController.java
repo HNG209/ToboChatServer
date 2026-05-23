@@ -43,8 +43,10 @@ public class GroupAcceptRequestController {
             @PathVariable String roomId,
             @RequestParam(defaultValue = "true") boolean accepted
     ) {
+        String userId = jwt.getSubject();
+        roomDomainService.respondInviteNeo4j(userId, roomId, accepted);
         return ApiResponse.<RoomResponse>builder()
-                .result(groupAcceptRequestService.respondInvite(jwt.getSubject(), roomId, accepted))
+                .result(null)
                 .build();
     }
 }
