@@ -2,10 +2,7 @@ package com.teamtobo.tobochatserver.controllers;
 
 import com.google.protobuf.Api;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
-import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
-import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
-import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
@@ -110,8 +107,8 @@ public class TestController {
 
     //-------- Room Domain Service Test ---------
 
-    @Operation(summary = "Test cạnh JOINED - Thêm thẳng thành viên vào nhóm")
-    @PostMapping("/add-member")
+    @Operation(summary = "Thêm thành viên vào nhóm")
+    @PostMapping("/members")
     public ResponseEntity<Void> addMember(
             @RequestParam String roomId,
             @RequestParam String userId
@@ -120,8 +117,8 @@ public class TestController {
         return ResponseEntity.ok().build();
     }
 
-    @Operation(summary = "Test cạnh INVITED - Gửi lời mời trực tiếp kèm ID người mời")
-    @PostMapping("/invite")
+    @Operation(summary = "Gửi lời mời vào nhóm tới người dùng")
+    @PostMapping("/accept-requests")
     public ResponseEntity<Void> inviteMember(
             @RequestParam String roomId,
             @RequestParam String inviterId,
@@ -130,8 +127,8 @@ public class TestController {
         return ResponseEntity.ok().build();
     }
 
-    @Operation(summary = "Test cạnh PENDING_APPROVAL - Chờ Admin hoặc hệ thống duyệt")
-    @PostMapping("/pending")
+    @Operation(summary = "Tạo lời mời chờ duyệt cho admin")
+    @PostMapping("/pending-requests")
     public ResponseEntity<Void> pendingMember(
             @RequestParam String roomId,
             @RequestParam String inviterId,
@@ -152,6 +149,20 @@ public class TestController {
                 .build();
     }
 
+    @Operation(summary = "Danh sách người dùng cần duyệt vào nhóm")
+    @GetMapping("/pending-requests")
+    public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPendingRequests(
+            @RequestParam String userId,
+            @RequestParam String roomId,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit) {
+        PageResponse<GroupPendingRequestResponse> pendingRequests =
+                roomDomainService.getPendingRequests(roomId, userId, cursor, limit);
+        return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
+                .result(pendingRequests)
+                .build();
+    }
+
     @Operation(summary = "Lấy trạng thái mối quan hệ hiện tại giữa User và Phòng")
     @GetMapping("/member-status")
     public ResponseEntity<MemberStatus> getMemberStatus(
@@ -162,7 +173,7 @@ public class TestController {
     }
 
     @Operation(summary = "Xóa bỏ mọi mối quan hệ (Rời phòng / Hủy lời mời / Từ chối duyệt) giữa User và Room")
-    @DeleteMapping("/leave-room")
+    @DeleteMapping("/relationships")
     public ResponseEntity<Void> deleteRelationship(
             @RequestParam String roomId,
             @RequestParam String userId) {

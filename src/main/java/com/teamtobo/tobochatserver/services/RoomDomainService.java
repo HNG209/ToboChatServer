@@ -3,10 +3,7 @@ package com.teamtobo.tobochatserver.services;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
-import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
-import com.teamtobo.tobochatserver.dtos.response.LeaveCheckResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
@@ -34,6 +31,7 @@ public interface RoomDomainService {
     //-----------------
 
     void addMemberNeo4j(String roomId, String userId);
+    PageResponse<GroupPendingRequestResponse> getPendingRequests(String roomId, String userId, String cursor, int limit);
     void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId);
     void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId);
     PageResponse<String> getJoinedRoomIdsNeo4j(String userId, String cursor, int limit);

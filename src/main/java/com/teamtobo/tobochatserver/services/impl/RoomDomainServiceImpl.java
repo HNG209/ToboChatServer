@@ -835,19 +835,54 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     @Override
     public void addMemberNeo4j(String roomId, String userId) {
-        log.info("[Neo4j] Thực hiện gán cạnh JOINED từ User {} tới Room {} (Tự động xóa trạng thái cũ nếu có)", userId, roomId);
         roomNodeRepository.addMember(roomId, userId);
     }
 
     @Override
+    public PageResponse<GroupPendingRequestResponse> getPendingRequests(String roomId, String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<RoomNodeRepository.PendingRequestData> requestDataList = roomNodeRepository.findPendingRequests(roomId, pageable);
+
+        boolean hasNext = requestDataList.size() > limit;
+        List<RoomNodeRepository.PendingRequestData> currentRequests = hasNext ? requestDataList.subList(0, limit) : requestDataList;
+
+        if (currentRequests.isEmpty()) {
+            return PageResponse.<GroupPendingRequestResponse>builder().items(List.of()).build();
+        }
+
+        Set<String> userIdsToFetch = new HashSet<>();
+        for (RoomNodeRepository.PendingRequestData req : currentRequests) {
+            if (req.targetUserId() != null) userIdsToFetch.add(req.targetUserId());
+            if (req.inviterId() != null) userIdsToFetch.add(req.inviterId());
+        }
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(new ArrayList<>(userIdsToFetch));
+
+        Room room = roomService.getRoomById(roomId, false);
+        String roomName = (room != null) ? room.getRoomName() : "Nhóm ToboChat";
+
+        List<GroupPendingRequestResponse> items = currentRequests.stream().map(req -> GroupPendingRequestResponse.builder()
+                .roomId(roomId)
+                .roomName(roomName)
+                .user(userProfileMap.get(req.targetUserId())) // Lấy profile người chờ duyệt
+                .inviter(userProfileMap.get(req.inviterId())) // Lấy profile người gửi lời mời
+                .build()).toList();
+
+        return PageResponse.<GroupPendingRequestResponse>builder()
+                .items(items)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
-        log.info("[Neo4j] Thực hiện gán cạnh INVITED từ User {} tới Room {} - Người mời: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
     }
 
     @Override
     public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
-        log.info("[Neo4j] Thực hiện gán cạnh PENDING_APPROVAL từ User {} tới Room {} - Người mời duyệt: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
         roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);
     }
 
@@ -870,8 +905,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     @Override
     public MemberStatus getMemberStatusNeo4j(String roomId, String userId) {
-        log.info("[Neo4j] Lấy trạng thái thành viên của User {} trong Room {}", userId, roomId);
-
         String statusStr = roomNodeRepository.getMemberStatus(roomId, userId);
 
         // Nếu không tìm thấy bất kỳ cạnh nào (trả về null hoặc chuỗi trống)
@@ -888,7 +921,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     @Override
     public void deleteMemberRelationshipNeo4j(String roomId, String userId) {
-        log.info("[Neo4j] Thực hiện xóa mọi quan hệ giữa User {} và Room {}", userId, roomId);
         roomNodeRepository.deleteRelationship(roomId, userId);
     }
 

@@ -8,11 +8,9 @@ import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.GroupPendingRequestService;
-import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
@@ -63,7 +61,7 @@ public class GroupPendingRequestServiceImpl implements GroupPendingRequestServic
                 .filter(item -> item.getUserId() != null && item.getRoomId() != null)
                 .map(item -> GroupPendingRequestResponse.builder()
                         .user(userService.getUserProfile(item.getUserId()))
-                        .requester(userService.getUserProfile(item.getRequesterId()))
+                        .inviter(userService.getUserProfile(item.getRequesterId()))
                         .roomId(item.getRoomId())
                         .roomName(item.getRoomName())
                         .build())

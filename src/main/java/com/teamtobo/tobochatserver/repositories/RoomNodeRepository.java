@@ -70,4 +70,12 @@ public interface RoomNodeRepository extends Neo4jRepository<RoomNode, String> {
             "    ELSE 'NOT_IN_GROUP' " +
             "  END AS status")
     List<UserRoomStatus> getMemberStatusesBatch(String roomId, List<String> userIds);
+
+    record PendingRequestData(String targetUserId, String inviterId) {}
+    @Query("MATCH (r:Room {id: $roomId})-[rel:PENDING]->(u:User) " +
+            "RETURN u.id AS targetUserId, rel.inviterId AS inviterId " +
+            "ORDER BY u.id ASC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<PendingRequestData> findPendingRequests(String roomId, Pageable pageable);
 }
