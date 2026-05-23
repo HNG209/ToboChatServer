@@ -16,4 +16,52 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, String> {
             "SKIP :#{#pageable.offset} " +
             "LIMIT :#{#pageable.pageSize + 1}")
     List<UserNode> findAllFriends(String userId, Pageable pageable);
+
+    @Query("MERGE (u1:User {id: $userId}) " +
+            "MERGE (u2:User {id: $otherId}) " +
+            "MERGE (u1)-[r:SEND_REQUEST]->(u2) " +
+            "ON CREATE SET r.createAt = timestamp()")
+    void createFriendRequest(String userId, String otherId);
+
+    @Query("MERGE (u1:User {id: $userId}) " +
+            "MERGE (u2:User {id: $otherId}) " +
+            "MERGE (u1)-[r:FRIEND]->(u2) " +
+            "ON CREATE SET r.createAt = timestamp()")
+    void createFriend(String userId, String otherId);
+
+    @Query ("MATCH (u1: User {id: $userId})-[r:SEND_REQUEST]-(u2: User {id: $otherId})" +
+            "DELETE r")
+    void deleteFriendRequest(String userId, String otherId);
+
+    @Query ("MATCH (u1: User {id: $userId})-[r:FRIEND]-(u2: User {id: $otherId})" +
+            "DELETE r")
+    void deleteFriend(String userId, String otherId);
+
+    @Query("OPTIONAL MATCH (u1:User {id: $userId})-[r:FRIEND]-(u2:User {id: $otherId}) " +
+            "OPTIONAL MATCH (u1_req:User {id: $userId})-[s:SEND_REQUEST]->(u2_req:User {id: $otherId}) " +
+            "OPTIONAL MATCH (u1_pen:User {id: $userId})<-[p:SEND_REQUEST]-(u2_pen:User {id: $otherId}) " +
+            "RETURN " +
+            "  CASE " +
+            "    WHEN r IS NOT NULL THEN 'FRIEND' " +
+            "    WHEN s IS NOT NULL THEN 'SENT' " +
+            "    WHEN p IS NOT NULL THEN 'PENDING' " +
+            "    ELSE 'STRANGER' " +
+            "  END AS status")
+    String getFriendStatus(String userId, String otherId);
+
+    // Lời mời kết bạn ĐÃ GỬI (userId -> target)
+    @Query("MATCH (u:User {id: $userId})-[r:SEND_REQUEST]->(target:User) " +
+            "RETURN target " +
+            "ORDER BY r.createAt DESC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<UserNode> findSentRequests(String userId, Pageable pageable);
+
+    // Lời mời kết bạn ĐÃ NHẬN / PENDING (sender -> userId)
+    @Query("MATCH (u:User {id: $userId})<-[r:SEND_REQUEST]-(sender:User) " +
+            "RETURN sender " +
+            "ORDER BY r.createAt DESC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<UserNode> findPendingRequests(String userId, Pageable pageable);
 }

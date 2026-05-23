@@ -14,11 +14,14 @@ import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -48,6 +51,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
 
     private final ApplicationEventPublisher eventPublisher;
+
+    private final RoomNodeRepository roomNodeRepository;
 
     // Tạo nhóm và add member
     @Override
@@ -847,4 +852,141 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 )
         );
     }
+
+
+    // -----Neo4j services-----
+
+    @Override
+    public void addMemberNeo4j(String roomId, String userId) {
+        roomNodeRepository.addMember(roomId, userId);
+    }
+
+    // Danh sách lời mời vào nhóm
+    @Override
+    public PageResponse<GroupAcceptRequestResponse> getAcceptRequests(String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<RoomNodeRepository.AcceptRequestData> requestDataList = roomNodeRepository.findAcceptRequestsByUserId(userId, pageable);
+
+        boolean hasNext = requestDataList.size() > limit;
+        List<RoomNodeRepository.AcceptRequestData> currentRequests = hasNext ? requestDataList.subList(0, limit) : requestDataList;
+
+        if (currentRequests.isEmpty()) {
+            return PageResponse.<GroupAcceptRequestResponse>builder().items(List.of()).build();
+        }
+
+        Set<String> inviterIdsToFetch = currentRequests.stream()
+                .map(RoomNodeRepository.AcceptRequestData::inviterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(new ArrayList<>(inviterIdsToFetch));
+
+        List<GroupAcceptRequestResponse> items = currentRequests.stream().map(req -> {
+            Room room = roomService.getRoomById(req.roomId(), false);
+
+            return GroupAcceptRequestResponse.builder()
+                    .roomId(req.roomId())
+                    .roomName(room != null ? room.getRoomName() : "Nhóm ToboChat")
+                    .avatarUrl(room != null ? room.getAvatarUrl() : null)
+                    .inviter(userProfileMap.get(req.inviterId())) // Gắn profile người mời
+                    .build();
+        }).toList();
+
+        return PageResponse.<GroupAcceptRequestResponse>builder()
+                .items(items)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    // Danh sách người dùng chờ duyệt vào nhóm
+    @Override
+    public PageResponse<GroupPendingRequestResponse> getPendingRequests(String roomId, String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<RoomNodeRepository.PendingRequestData> requestDataList = roomNodeRepository.findPendingRequests(roomId, pageable);
+
+        boolean hasNext = requestDataList.size() > limit;
+        List<RoomNodeRepository.PendingRequestData> currentRequests = hasNext ? requestDataList.subList(0, limit) : requestDataList;
+
+        if (currentRequests.isEmpty()) {
+            return PageResponse.<GroupPendingRequestResponse>builder().items(List.of()).build();
+        }
+
+        Set<String> userIdsToFetch = new HashSet<>();
+        for (RoomNodeRepository.PendingRequestData req : currentRequests) {
+            if (req.targetUserId() != null) userIdsToFetch.add(req.targetUserId());
+            if (req.inviterId() != null) userIdsToFetch.add(req.inviterId());
+        }
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(new ArrayList<>(userIdsToFetch));
+
+        Room room = roomService.getRoomById(roomId, false);
+        String roomName = (room != null) ? room.getRoomName() : "Nhóm ToboChat";
+
+        List<GroupPendingRequestResponse> items = currentRequests.stream().map(req -> GroupPendingRequestResponse.builder()
+                .roomId(roomId)
+                .roomName(roomName)
+                .user(userProfileMap.get(req.targetUserId())) // Lấy profile người chờ duyệt
+                .inviter(userProfileMap.get(req.inviterId())) // Lấy profile người gửi lời mời
+                .build()).toList();
+
+        return PageResponse.<GroupPendingRequestResponse>builder()
+                .items(items)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    // Tạo lời mời vào nhóm
+    @Override
+    public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
+    }
+
+    // Tạo lời mời chờ duyệt
+    @Override
+    public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);
+    }
+
+    @Override
+    public PageResponse<String> getJoinedRoomIdsNeo4j(String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<String> roomIds = roomNodeRepository.findRoomIdsByUserId(userId, pageable);
+
+        boolean hasNext = roomIds.size() > pageable.getPageSize();
+
+        List<String> currentRoomIds = hasNext ? roomIds.subList(0, limit) : roomIds;
+
+        return PageResponse.<String>builder()
+                .items(currentRoomIds)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    @Override
+    public MemberStatus getMemberStatusNeo4j(String roomId, String userId) {
+        String statusStr = roomNodeRepository.getMemberStatus(roomId, userId);
+
+        // Nếu không tìm thấy bất kỳ cạnh nào (trả về null hoặc chuỗi trống)
+        if (statusStr == null || statusStr.isBlank()) {
+            return MemberStatus.NOT_IN_GROUP;
+        }
+
+        try {
+            return MemberStatus.valueOf(statusStr);
+        } catch (IllegalArgumentException e) {
+            return MemberStatus.NOT_IN_GROUP;
+        }
+    }
+
+    @Override
+    public void deleteMemberRelationshipNeo4j(String roomId, String userId) {
+        roomNodeRepository.deleteRelationship(roomId, userId);
+    }
+
 }

@@ -15,5 +15,5 @@ public class GroupPendingRequestResponse {
     String roomName;
 
     UserResponse user;
-    UserResponse requester;
+    UserResponse inviter;
 }
