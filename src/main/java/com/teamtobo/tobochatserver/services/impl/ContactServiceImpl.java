@@ -7,9 +7,11 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
 import com.teamtobo.tobochatserver.entities.nodes.UserNode;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
 import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -20,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,29 +31,52 @@ import java.util.Map;
 @Slf4j
 public class ContactServiceImpl implements ContactService {
     private final UserNodeRepository userNodeRepository;
+    private final RoomNodeRepository roomNodeRepository;
     private final UserService userService;
+
+    @Override
     public PageResponse<FriendResponse> getFriends(String userId, String roomId, String nextCursor, int limit) {
-        int page = Integer.parseInt(nextCursor);
+        int page = (nextCursor == null || nextCursor.isEmpty()) ? 0 : Integer.parseInt(nextCursor);
         Pageable pageable = PageRequest.of(page, limit);
 
+        // 1. Lấy danh sách bạn bè từ Neo4j
         List<UserNode> friends = userNodeRepository.findAllFriends(userId, pageable);
 
         boolean hasNext = friends.size() > pageable.getPageSize();
         List<UserNode> currentFriends = hasNext ? friends.subList(0, limit) : friends;
 
+        if (currentFriends.isEmpty()) {
+            return PageResponse.<FriendResponse>builder().items(List.of()).build();
+        }
+
         List<String> userIds = currentFriends.stream().map(UserNode::getId).toList();
 
+        // BATCH GET: Lấy thông tin cá nhân (DynamoDB)
         Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(userIds);
+
+        // BATCH GET: Lấy trạng thái trong phòng (Neo4j)
+        Map<String, MemberStatus> memberStatusMap = new HashMap<>();
+        if (roomId != null && !roomId.isBlank()) {
+            List<RoomNodeRepository.UserRoomStatus> statuses = roomNodeRepository.getMemberStatusesBatch(roomId, userIds);
+
+            for (RoomNodeRepository.UserRoomStatus s : statuses) {
+                try {
+                    memberStatusMap.put(s.userId(), MemberStatus.valueOf(s.status()));
+                } catch (IllegalArgumentException e) {
+                    memberStatusMap.put(s.userId(), MemberStatus.NOT_IN_GROUP);
+                }
+            }
+        }
 
         return PageResponse.<FriendResponse>builder()
                 .items(currentFriends.stream().map(friend -> {
-                    if (userResponseMap.get(friend.getId()) == null)
-                        return FriendResponse.builder()
-                            .id(friend.getId()).build();
+                    UserResponse userRes = userResponseMap.get(friend.getId());
+
                     return FriendResponse.builder()
                             .id(friend.getId())
-                            .name(userResponseMap.get(friend.getId()).getName())
-                            .avatarUrl(userResponseMap.get(friend.getId()).getAvatarUrl())
+                            .name(userRes != null ? userRes.getName() : "Người dùng ToboChat")
+                            .avatarUrl(userRes != null ? userRes.getAvatarUrl() : null)
+                            .memberStatus(memberStatusMap.getOrDefault(friend.getId(), MemberStatus.NOT_IN_GROUP))
                             .build();
                 }).toList())
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
@@ -58,7 +84,6 @@ public class ContactServiceImpl implements ContactService {
     }
 
     @Override
-    @Transactional
     public void sendFriendRequest(String userId, String otherId) {
         if (userId.equals(otherId)) {
             throw new AppException(ErrorCode.CANNOT_ADD_SELF);
@@ -76,10 +101,12 @@ public class ContactServiceImpl implements ContactService {
         userNodeRepository.createFriendRequest(userId, otherId);
     }
 
+    @Override
     public void cancelFriendRequest(String userId, String otherId) {
         userNodeRepository.deleteFriendRequest(userId, otherId);
     }
 
+    @Override
     public FriendStatus getFriendStatus(String userId, String otherId) {
         if (userId.equals(otherId)) {
             return FriendStatus.SELF;
@@ -92,6 +119,7 @@ public class ContactServiceImpl implements ContactService {
         return FriendStatus.valueOf(statusStr);
     }
 
+    @Override
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);

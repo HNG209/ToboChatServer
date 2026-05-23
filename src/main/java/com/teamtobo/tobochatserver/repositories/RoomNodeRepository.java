@@ -58,4 +58,16 @@ public interface RoomNodeRepository extends Neo4jRepository<RoomNode, String> {
     @Query("MATCH (u:User {id: $userId})-[r]-(rm:Room {id: $roomId}) " +
             "DELETE r")
     void deleteRelationship(String roomId, String userId);
+
+    record UserRoomStatus(String userId, String status) {}
+    @Query("UNWIND $userIds AS uid " +
+            "OPTIONAL MATCH (u:User {id: uid})-[r:ADDED|SENT|PENDING]-(rm:Room {id: $roomId}) " +
+            "RETURN uid AS userId, " +
+            "  CASE " +
+            "    WHEN type(r) = 'ADDED' THEN 'ADDED' " +
+            "    WHEN type(r) = 'SENT' THEN 'SENT' " +
+            "    WHEN type(r) = 'PENDING' THEN 'PENDING' " +
+            "    ELSE 'NOT_IN_GROUP' " +
+            "  END AS status")
+    List<UserRoomStatus> getMemberStatusesBatch(String roomId, List<String> userIds);
 }
