@@ -7,7 +7,9 @@ import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
+import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
 import com.teamtobo.tobochatserver.services.ContactService;
+import com.teamtobo.tobochatserver.services.RoomDomainService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -15,12 +17,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Test Contact Controller")
 @RestController
 @RequestMapping("/contacts/test")
 @RequiredArgsConstructor
 public class TestController {
     private final ContactService contactService;
+
+    private final RoomDomainService roomDomainService;
 
     @Operation(summary = "Danh sách bạn bè của người dùng")
     @GetMapping("/friends")
@@ -99,5 +105,62 @@ public class TestController {
         contactService.deleteFriend(userId, otherId);
 
         return ResponseEntity.noContent().build();
+    }
+
+    //-------- Room Domain Service Test ---------
+
+    @Operation(summary = "Test cạnh JOINED - Thêm thẳng thành viên vào nhóm")
+    @PostMapping("/add-member")
+    public ResponseEntity<Void> addMember(
+            @RequestParam String roomId,
+            @RequestParam String userId
+            ) {
+        roomDomainService.addMemberNeo4j(roomId, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(summary = "Test cạnh INVITED - Gửi lời mời trực tiếp kèm ID người mời")
+    @PostMapping("/invite")
+    public ResponseEntity<Void> inviteMember(
+            @RequestParam String roomId,
+            @RequestParam String inviterId,
+            @RequestParam String targetUserId) {
+        roomDomainService.createGroupAcceptRequestNeo4j(roomId, inviterId, targetUserId);
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(summary = "Test cạnh PENDING_APPROVAL - Chờ Admin hoặc hệ thống duyệt")
+    @PostMapping("/pending")
+    public ResponseEntity<Void> pendingMember(
+            @RequestParam String roomId,
+            @RequestParam String inviterId,
+            @RequestParam String targetUserId) {
+        roomDomainService.createGroupPendingRequestNeo4j(roomId, inviterId, targetUserId);
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(summary = "Lấy danh sách ID các phòng mà một User đã tham gia")
+    @GetMapping("/joined-rooms")
+    public ResponseEntity<List<String>> getJoinedRooms(@RequestParam String userId) {
+        List<String> roomIds = roomDomainService.getJoinedRoomIdsNeo4j(userId);
+        return ResponseEntity.ok(roomIds);
+    }
+
+    @Operation(summary = "Lấy trạng thái mối quan hệ hiện tại giữa User và Phòng")
+    @GetMapping("/member-status")
+    public ResponseEntity<MemberStatus> getMemberStatus(
+            @RequestParam String roomId,
+            @RequestParam String userId) {
+        MemberStatus status = roomDomainService.getMemberStatusNeo4j(roomId, userId);
+        return ResponseEntity.ok(status);
+    }
+
+    @Operation(summary = "Xóa bỏ mọi mối quan hệ (Rời phòng / Hủy lời mời / Từ chối duyệt) giữa User và Room")
+    @DeleteMapping("/leave-room")
+    public ResponseEntity<Void> deleteRelationship(
+            @RequestParam String roomId,
+            @RequestParam String userId) {
+        roomDomainService.deleteMemberRelationshipNeo4j(roomId, userId);
+        return ResponseEntity.ok().build();
     }
 }

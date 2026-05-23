@@ -3,7 +3,6 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
-import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
@@ -13,6 +12,7 @@ import com.teamtobo.tobochatserver.entities.*;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
+import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
 import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
@@ -20,18 +20,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
-import software.amazon.awssdk.enhanced.dynamodb.model.Page;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
-import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -53,6 +47,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
 
     private final ApplicationEventPublisher eventPublisher;
+
+    private final RoomNodeRepository roomNodeRepository;
 
     // Tạo nhóm và add member
     @Override
@@ -831,4 +827,56 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 )
         );
     }
+
+
+    //----------------------
+
+    @Override
+    public void addMemberNeo4j(String roomId, String userId) {
+        log.info("[Neo4j] Thực hiện gán cạnh JOINED từ User {} tới Room {} (Tự động xóa trạng thái cũ nếu có)", userId, roomId);
+        roomNodeRepository.addMember(roomId, userId);
+    }
+
+    @Override
+    public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        log.info("[Neo4j] Thực hiện gán cạnh INVITED từ User {} tới Room {} - Người mời: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
+        roomNodeRepository.createSent(roomId, inviterId, targetUserId);
+    }
+
+    @Override
+    public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        log.info("[Neo4j] Thực hiện gán cạnh PENDING_APPROVAL từ User {} tới Room {} - Người mời duyệt: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
+        roomNodeRepository.createPending(roomId, inviterId, targetUserId);
+    }
+
+    @Override
+    public List<String> getJoinedRoomIdsNeo4j(String userId) {
+        log.info("[Neo4j] Lấy danh sách ID phòng mà User {} đã tham gia", userId);
+        return roomNodeRepository.findRoomIdsByUserId(userId);
+    }
+
+    @Override
+    public MemberStatus getMemberStatusNeo4j(String roomId, String userId) {
+        log.info("[Neo4j] Lấy trạng thái thành viên của User {} trong Room {}", userId, roomId);
+
+        String statusStr = roomNodeRepository.getMemberStatus(roomId, userId);
+
+        // Nếu không tìm thấy bất kỳ cạnh nào (trả về null hoặc chuỗi trống)
+        if (statusStr == null || statusStr.isBlank()) {
+            return MemberStatus.NOT_IN_GROUP;
+        }
+
+        try {
+            return MemberStatus.valueOf(statusStr);
+        } catch (IllegalArgumentException e) {
+            return MemberStatus.NOT_IN_GROUP;
+        }
+    }
+
+    @Override
+    public void deleteMemberRelationshipNeo4j(String roomId, String userId) {
+        log.info("[Neo4j] Thực hiện xóa mọi quan hệ giữa User {} và Room {}", userId, roomId);
+        roomNodeRepository.deleteRelation(roomId, userId);
+    }
+
 }

@@ -9,6 +9,7 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.entities.GroupAcceptRequest;
 import com.teamtobo.tobochatserver.entities.RoomMember;
+import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 
 import java.util.List;
@@ -28,4 +29,17 @@ public interface RoomDomainService {
     RoomMember getMember(String roomId, String userId);
     void updateRoomAvatar(String userId, String roomId, String avatarUrl);
     void updateRoomName(String userId, String roomId, String roomName);
+
+
+    //-----------------
+
+    void addMemberNeo4j(String roomId, String userId);
+    void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId);
+    void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId);
+
+    List<String> getJoinedRoomIdsNeo4j(String userId);
+
+    MemberStatus getMemberStatusNeo4j(String roomId, String userId);
+
+    void deleteMemberRelationshipNeo4j(String roomId, String userId);
 }
