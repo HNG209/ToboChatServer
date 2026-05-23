@@ -19,6 +19,7 @@ public class CallSessionManager {
         private Instant startTime;
         private String initiatorId;
         private Set<String> participants = ConcurrentHashMap.newKeySet();
+        private boolean isVideoCall = false;
         private boolean isAnswered = false;
 
         private int totalMembers;
@@ -36,7 +37,7 @@ public class CallSessionManager {
     private final Map<String, CallSession> activeCalls = new ConcurrentHashMap<>();
 
     // Khi có người yêu cầu gọi
-    public void initCall(String roomId, String callerId, int totalMembers) {
+    public void initCall(String roomId, String callerId, int totalMembers, boolean isVideoCall) {
         CallSession session = activeCalls.computeIfAbsent(roomId, k -> new CallSession());
 
         // Chỉ gán người khởi tạo ở lần đầu tiên tạo phòng
@@ -44,19 +45,29 @@ public class CallSessionManager {
             session.setInitiatorId(callerId);
             session.setTotalMembers(totalMembers);
         }
+
+        session.setVideoCall(isVideoCall);
         session.getParticipants().add(callerId);
     }
 
     // Khi có người bắt máy
-    public void markAsAnswered(String roomId, String userId) {
+    public boolean markAsAnswered(String roomId, String userId) {
         CallSession session = activeCalls.get(roomId);
         if (session != null) {
+            // KIỂM TRA: Nếu user đã nằm trong danh sách tham gia -> Đã bắt máy rồi
+            if (session.getParticipants().contains(userId)) {
+                return false;
+            }
+
             session.setAnswered(true);
             session.getParticipants().add(userId);
+
             if (session.getStartTime() == null) {
                 session.setStartTime(Instant.now());
             }
+            return true; // Đánh dấu bắt máy thành công
         }
+        return false; // Phòng không tồn tại
     }
 
     // Khi có người rời đi / từ chối
@@ -127,7 +138,34 @@ public class CallSessionManager {
         return false; // Cuộc gọi đã kết thúc hoặc không tồn tại
     }
 
+    public boolean isUserInAnyCall(String userId) {
+        if (userId == null) return false;
+
+        return activeCalls.values().stream()
+                .anyMatch(session -> session.getParticipants().contains(userId));
+    }
+
+    public boolean isUserInRoomCall(String userId, String roomId) {
+        if (userId == null || roomId == null) return false;
+
+        CallSession session = activeCalls.get(roomId);
+
+        // Nếu phòng đang có cuộc gọi, kiểm tra xem danh sách người tham gia có chứa userId này không
+        if (session != null) {
+            return session.getParticipants().contains(userId);
+        }
+
+        return false;
+    }
+
     public boolean isCallActive(String roomId) {
         return activeCalls.containsKey(roomId);
+    }
+
+    public boolean isVideoCall(String roomId) {
+        CallSession session = activeCalls.get(roomId);
+
+        // Nếu session tồn tại thì trả về giá trị thực tế, ngược lại mặc định là false
+        return session != null && session.isVideoCall();
     }
 }

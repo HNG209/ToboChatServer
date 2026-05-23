@@ -1,14 +1,17 @@
 package com.teamtobo.tobochatserver.aspects;
 
-import com.teamtobo.tobochatserver.annotations.RequirePermission;
+import com.teamtobo.tobochatserver.annotations.RequireMemberPermission;
 import com.teamtobo.tobochatserver.annotations.RoomId;
+import com.teamtobo.tobochatserver.dtos.response.MemberPermissionsResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
+import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
-import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
+import com.teamtobo.tobochatserver.services.RoomService;
 import lombok.AllArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -21,14 +24,12 @@ import org.springframework.stereotype.Component;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 
-import static com.teamtobo.tobochatserver.RolePermission.hasPermission;
-import static com.teamtobo.tobochatserver.utils.Helper.isDMRoom;
-
 @Aspect
 @Component
 @AllArgsConstructor
 public class PermissionAspect {
     private final RoomMemberService roomMemberService;
+    private final RoomService roomService;
 
     @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireRoomMember)")
     public Object checkMember(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -37,6 +38,7 @@ public class PermissionAspect {
         String roomId = extractRoomId(joinPoint); // group id: uuid, DM id: id1_id2
 
         // nếu định dạng là DM id thì proceed tiếp
+        assert roomId != null;
         if (roomId.contains("_")) {
             String[] parts = roomId.split("_");
 
@@ -62,49 +64,45 @@ public class PermissionAspect {
         return joinPoint.proceed();
     }
 
-    @Around("@annotation(com.teamtobo.tobochatserver.annotations.RequireAdmin)")
-    public Object checkAdmin(ProceedingJoinPoint joinPoint) throws Throwable {
-        String userId = getCurrentUserId();
-        String roomId = extractRoomId(joinPoint);
-
-        RoomMember member = roomMemberService.getMemberById(userId, roomId);
-
-        if(member == null)
-            throw new AppException(ErrorCode.NOT_IN_ROOM);
-
-        if(member.getRole() != MemberRole.ADMIN)
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-
-        return joinPoint.proceed();
-    }
-
     @Around("@annotation(requirePermission)")
     public Object checkPermission(ProceedingJoinPoint joinPoint,
-                                  RequirePermission requirePermission) throws Throwable {
+                                  RequireMemberPermission requirePermission) throws Throwable {
 
-        // 1. Lấy userId từ JWT
+        // Lấy userId từ JWT
         String userId = getCurrentUserId();
 
-        // 2. Lấy roomId từ @RoomId
+        // Lấy roomId từ @RoomId
         String roomId = extractRoomId(joinPoint);
 
-        if (roomId == null) {
-            throw new AppException(ErrorCode.ROOM_NOT_FOUND);
-        }
+        Room room = roomService.getRoomById(roomId, false);
 
-        // 3. Query member từ DynamoDB
-        RoomMember member = roomMemberService.getMemberById(userId, roomId);
+        RoomMemberResponse member = roomMemberService.getMember(userId, roomId);
 
         if (member == null) {
             throw new AppException(ErrorCode.NOT_IN_ROOM);
         }
 
-        // 4. Check permission
-        if (member.getRoomType() == RoomType.GROUP && !hasPermission(member.getRole(), requirePermission.value())) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
+        MemberPermissionsResponse permissionsResponse = roomMemberService.buildMemberPermission(member, room);
+
+        MemberPermission requiredPermission = requirePermission.value();
+        boolean hasPermission = false;
+
+        switch (requiredPermission) {
+            case ADD_MEMBER -> hasPermission = permissionsResponse.isCanAddMember();
+            case SEND_MESSAGE -> hasPermission = permissionsResponse.isCanSendMessage();
+            case UPDATE_ROOM_METADATA -> hasPermission = permissionsResponse.isCanUpdateMetadata();
+            case UPDATE_ROOM_SETTINGS -> hasPermission = permissionsResponse.isCanUpdateRoomSettings();
+            case APPROVE_MEMBER -> hasPermission = permissionsResponse.isCanApproveMember();
+            case DISBAND_GROUP -> hasPermission = permissionsResponse.isCanDisbandGroup();
+            case REMOVE_MEMBER -> hasPermission = permissionsResponse.isCanRemoveMember();
+            case GET_PENDING_REQUESTS -> hasPermission = permissionsResponse.isCanGetPendingRequests();
+            case UPDATE_MEMBER_ROLE -> hasPermission = permissionsResponse.isCanUpdateMemberRole();
+            default -> {}
         }
 
-        // 5. Cho chạy tiếp
+        if (!hasPermission)
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
+
         return joinPoint.proceed();
     }
 

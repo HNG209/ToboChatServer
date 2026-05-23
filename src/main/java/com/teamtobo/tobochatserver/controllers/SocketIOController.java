@@ -10,6 +10,7 @@ import com.teamtobo.tobochatserver.dtos.request.CallRequest;
 import com.teamtobo.tobochatserver.dtos.response.CallResponse;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.User;
+import com.teamtobo.tobochatserver.entities.enums.CallStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.CallService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
@@ -81,26 +82,50 @@ public class SocketIOController {
         server.addEventListener("request_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
+            Boolean isVideoCall = data.getIsVideoCall();
+
+            if (callSessionManager.isCallActive(roomId)) {
+                log.warn("User [{}] cố gắng bắt đầu cuộc gọi mới nhưng phòng [{}] đang có cuộc gọi", callerId, roomId);
+                client.sendEvent("call_error", "Phòng này đang có cuộc gọi diễn ra.");
+                return;
+            }
 
             User caller = userService.getUserById(callerId);
             Room room = roomService.getRoomById(roomId, false);
-            log.info("Started call, room info {}", room);
 
-            log.info("User [{}] đang gọi vào phòng [{}]", caller.getName(), roomId);
+            log.info("User [{}] đang gọi vào phòng [{}], cuộc gọi video: {}", caller.getName(), roomId, isVideoCall);
 
             // Tạo Token cho người gọi và trả về ngay để họ vào phòng LiveKit
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
-            client.sendEvent("call_started", new CallResponse(callerToken, roomId));
-            int totalMembers = (room != null) ? room.getMemberCount() : 2;
-            callSessionManager.initCall(roomId, callerId, totalMembers);
 
-            eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken));
+            client.sendEvent("call_started", new CallResponse(callerToken, roomId, isVideoCall));
+
+            server.getRoomOperations(callerId).sendEvent("call_status_updated",
+                    Map.of("roomId", roomId,
+                            "status", CallStatus.IN_CALL));
+
+            int totalMembers = (room != null) ? room.getMemberCount() : 2;
+
+            callSessionManager.initCall(roomId, callerId, totalMembers, isVideoCall);
+
+            eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken, isVideoCall));
         });
 
         server.addEventListener("accept_call", CallRequest.class, (client, data, ack) -> {
             String userId = client.get("userId");
-            log.info("Phòng [{}] đã có người bắt máy", data.getRoomId());
-            callSessionManager.markAsAnswered(data.getRoomId(), userId);
+            String roomId = data.getRoomId();
+
+            if (callSessionManager.markAsAnswered(roomId, userId)) {
+                log.info("Phòng [{}] đã có người bắt máy: {}", roomId, userId);
+
+                // Chỉ gửi lệnh tắt popup khi người này THỰC SỰ MỚI bắt máy lần đầu
+                if (userId != null) {
+                    server.getRoomOperations(userId).sendEvent("call_accepted", data);
+                }
+            } else {
+                // Bỏ qua nếu FE gửi sự kiện accept_call lần thứ 2, thứ 3...
+                log.warn("User [{}] đã bắt máy phòng [{}] trước đó rồi, bỏ qua sự kiện trùng lặp", userId, roomId);
+            }
         });
 
         server.addEventListener("join_ongoing_call", CallRequest.class, (client, data, ack) -> {
@@ -117,7 +142,11 @@ public class SocketIOController {
                 String token = callService.generateCallToken(roomId, user.getName(), userId);
 
                 // Gửi Token VỀ RIÊNG MÁY CỦA NGƯỜI XIN VÀO (client.sendEvent)
-                client.sendEvent("call_joined", new CallResponse(token, roomId));
+                client.sendEvent("call_joined", new CallResponse(token, roomId, data.getIsVideoCall()));
+
+                server.getRoomOperations(userId).sendEvent("call_status_updated",
+                        Map.of("roomId", roomId,
+                                "status", CallStatus.IN_CALL));
             } else {
                 // Báo lỗi nếu họ bấm lúc cuộc gọi vừa mới tắt xong
                 client.sendEvent("call_error", "Cuộc gọi này đã kết thúc.");
@@ -127,13 +156,21 @@ public class SocketIOController {
         server.addEventListener("cancel_call", CallRequest.class, (client, data, ack) -> {
             String callerId = client.get("userId");
             String roomId = data.getRoomId();
+            boolean isVideoCall = callSessionManager.isVideoCall(roomId);
 
             // Xử lý rời cuộc gọi
             CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
 
+            // Tắt popup trên các thiết bị khác của user
+            server.getRoomOperations(callerId).sendEvent("call_cancelled",
+                    CallRequest.builder().roomId(roomId).build());
+
             // NẾU result == null (cuộc gọi đã bị chốt bởi người thoát trước đó)
             // HOẶC result là "ONGOING" (gọi nhóm vẫn còn người đang nói chuyện)
             if (result == null || result.getStatus().equals("ONGOING")) {
+                server.getRoomOperations(callerId).sendEvent("call_status_updated",
+                        Map.of("roomId", roomId,
+                                "status", CallStatus.ACTIVE));
                 return;
             }
 
@@ -159,6 +196,7 @@ public class SocketIOController {
             if (result.getStatus().equals("ENDED")) {
                 log.info("Cuộc gọi phòng [{}] kết thúc, thời lượng: {}s", roomId, result.getDuration());
                 widgetMetadata.put("duration", String.valueOf(result.getDuration()));
+                widgetMetadata.put("isVideoCall", isVideoCall ? "true" : "false");
             } else {
                 log.info("Cuộc gọi phòng [{}] bị nhỡ", roomId);
             }

@@ -1,10 +1,11 @@
 package com.teamtobo.tobochatserver.services.handlers;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.response.MemberPermissionsResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
-import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +24,7 @@ public class RoomUpdateEventHandler {
 
     @Async
     @EventListener
-    public void handleRoomUpdate(RoomUpdateEvent event) {
+    public void handleRoomMetadataUpdate(RoomUpdateEvent event) {
         // Gửi sự kiện cho các member để cập nhật lại phòng trong inbox
         String cursor = null;
         do {
@@ -33,6 +34,29 @@ public class RoomUpdateEventHandler {
             for(RoomMemberResponse member: members) {
                 socketIOServer.getRoomOperations(member.getId())
                         .sendEvent("room_updated", event);
+            }
+
+            cursor = pageResponse.getNextCursor();
+        } while (cursor != null);
+    }
+
+    @Async
+    @EventListener
+    public void handleMemberUpdate(MemberUpdateEvent event) {
+        String cursor = null;
+        do {
+            PageResponse<RoomMemberResponse> pageResponse = roomMemberService.getRoomMembers(event.getRoomId(), cursor, 10);
+            List<RoomMemberResponse> members = pageResponse.getItems();
+
+            for(RoomMemberResponse member: members) {
+                MemberPermissionsResponse permissions =
+                        roomMemberService.buildMemberPermission(member, event.getRoom());
+
+                member.setRoomId(event.getRoomId());
+                member.setPermissions(permissions);
+
+                socketIOServer.getRoomOperations(member.getId())
+                            .sendEvent("member_updated", member);
             }
 
             cursor = pageResponse.getNextCursor();
