@@ -1,9 +1,11 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
+import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomUpdateRequest;
@@ -28,7 +30,6 @@ import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhanced
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -87,21 +88,27 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomTable.updateItem(room);
+
+        eventPublisher.publishEvent(
+                new RoomUpdateEvent(
+                        roomId,
+                        RoomUpdatePayload.builder()
+                                .allowSendMessage(request.getAllowSendMessage())
+                                .allowAddMember(request.getAllowAddMember())
+                                .allowUpdateMetadata(request.getAllowUpdateMetadata())
+                                .approveMember(request.getApproveMember())
+                                .build()
+                )
+        );
+
+        eventPublisher.publishEvent(
+                new MemberUpdateEvent(roomId, room)
+        );
     }
 
     @Override
     public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
         Room room = roomService.getRoomById(roomId, true);
-
-        //phải là group
-        if (room.getRoomType() != RoomType.GROUP) {
-            throw new AppException(ErrorCode.ROOM_INVALID);
-        }
-
-        //group có bật duyệt không
-        if (!room.isApproveMember()) {
-            throw new AppException(ErrorCode.ROOM_NOT_REQUIRE_APPROVAL);
-        }
 
         String pk = "ROOM#" + roomId;
         String sk = "PENDING#" + targetUserId;
@@ -154,7 +161,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             .approveMember(room.isApproveMember())
                             .memberCount(room.getMemberCount())
                             // Nếu phòng đã có tin nhắn trước đó
-                            .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                            .latestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(targetUserId, roomId)))
                             // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                             .build());
         } else {
@@ -189,12 +196,27 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         // Trả về cho người thêm trạng thái của từng bạn bè khi đã thêm
         return friendResponseList;
     }
+
     @Override
-    public void updateMember(String roomId, String memberId, MemberUpdateRequest request) {
+    public void updateMemberRole(String roomId, String userId, String memberId, MemberUpdateRequest request) {
         RoomMember targetMember = getMember(roomId, memberId);
         targetMember.setRole(request.getMemberRole());
         targetMember.setUpdatedAt(Instant.now().toString());
         roomMemberTable.updateItem(targetMember);
+
+        UserResponse userResponse = userService.getUserProfile(memberId);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.MEMBER_ROLE_UPDATED,
+                        Map.of("updatedMemberId", memberId,
+                                "updatedMemberName", userResponse.getName(),
+                                "newRole", request.getMemberRole().name())
+                )
+        );
     }
 
     @Override
@@ -203,11 +225,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         RoomMember target = getMember(roomId, memberId);
         User targetUser = userService.getUserById(memberId); // Lấy tên của người dùng bị xoá gán vào tin nhắn hệ thống
 
-        if (remover.getRole() == MemberRole.MEMBER) {
-            throw new AppException(ErrorCode.INVALID_PERMISSION);
-        }
-
-        if (remover.getRole() == MemberRole.VICE_ADMIN && target.getRole() != MemberRole.MEMBER) {
+        // Cấp trên mới xoá được cấp dưới
+        if (!remover.getRole().isHigherThan(target.getRole())) {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
         }
 
@@ -434,7 +453,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Cập nhật real time cho người bên kia (otherId)
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
-        otherRoomMetadata.setLatestMessage(chatService.getLatestMessage(otherId, roomId));
+        otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(otherId, roomId)));
         socketIOServer.getRoomOperations(otherId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(otherRoomMetadata)
@@ -442,7 +461,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
-        myRoomMetadata.setLatestMessage(chatService.getLatestMessage(userId, roomId));
+        myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(userId, roomId)));
         socketIOServer.getRoomOperations(userId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(myRoomMetadata)
@@ -636,7 +655,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                     .approveMember(room.isApproveMember())
                                     .memberCount(room.getMemberCount())
                                     // Nếu phòng đã có tin nhắn trước đó
-                                    .latestMessage(chatService.getLatestMessage(targetUserId, roomId))
+                                    .latestMessage(chatService.buildLatestMessage(
+                                            chatService.getRoomLatestMessage(roomId)))
                                     // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                                     .build())
                             .inboxStatus(InboxStatus.ACTIVE)
@@ -795,8 +815,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         eventPublisher.publishEvent(
                 new RoomUpdateEvent(
                         roomId,
-                        null,
-                        avatarUrl
+                        RoomUpdatePayload.builder()
+                                .newRoomAvatar(avatarUrl)
+                                .build()
                 )
         );
     }
@@ -825,8 +846,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         eventPublisher.publishEvent(
                 new RoomUpdateEvent(
                         roomId,
-                        roomName,
-                        null
+                        RoomUpdatePayload.builder()
+                                .newRoomName(roomName)
+                                .build()
                 )
         );
     }

@@ -1,6 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.entities.enums.CallStatus;
 import com.teamtobo.tobochatserver.services.CallService;
+import com.teamtobo.tobochatserver.services.handlers.CallSessionManager;
 import io.livekit.server.RoomName;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,8 @@ public class CallServiceImpl implements CallService {
     @Value("${livekit.api.secret}")
     private String livekitApiSecret;
 
+    private final CallSessionManager callSessionManager;
+
     @Override
     public String generateCallToken(String roomName, String participantName, String participantId) {
         AccessToken token = new AccessToken(livekitApiKey, livekitApiSecret);
@@ -29,5 +33,16 @@ public class CallServiceImpl implements CallService {
         token.addGrants(new RoomJoin(true), new RoomName(roomName));
 
         return token.toJwt();
+    }
+
+    @Override
+    public CallStatus getCallStatus(String userId, String roomId) {
+        if (callSessionManager.isUserInRoomCall(userId, roomId))
+            return CallStatus.IN_CALL;
+
+        if (callSessionManager.isCallActive(roomId))
+            return CallStatus.ACTIVE;
+
+        return CallStatus.INACTIVE;
     }
 }

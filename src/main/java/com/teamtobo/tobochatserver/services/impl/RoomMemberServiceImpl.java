@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.payloads.InboxUnreadUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
@@ -45,6 +46,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
     @Value("${aws.dynamodb.tableName:ToboChatTable}")
     private String tableName;
+
     @Override
     public PageResponse<RoomMemberResponse> getRoomMembers(String roomId, String cursor, int limit) {
         if (roomId == null || roomId.trim().isEmpty()) {
@@ -129,7 +131,10 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 }
 
                 socketIOServer.getRoomOperations(member.getId())
-                        .sendEvent("unread_updated", roomId);
+                        .sendEvent("unread_updated", InboxUnreadUpdatePayload.builder()
+                                .roomId(roomId)
+                                .unreadCount(1)
+                                .build());
 
                 increaseRoomUnreadMessage(cleanMemberId, roomId);
                 updateTotalUnreadMessage(cleanMemberId, 1);
@@ -151,6 +156,13 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             updateTotalUnreadMessage(userId, -countToReduce);
             resetRoomUnreadMessage(userId, roomId);
+
+            // Gửi cho các phiên/thiết bị khác của người dùng để cập nhật lại
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("unread_updated", InboxUnreadUpdatePayload.builder()
+                            .roomId(roomId)
+                            .unreadCount(-countToReduce)
+                            .build());
         }
     }
 
@@ -293,14 +305,8 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             // Map Latest Message
             LatestMessage lm = i.getLatestMessage();
-            if (lm != null) {
-                roomResponse.setLatestMessage(MessageResponse.builder()
-                        .id(lm.getMessageId())
-                        .roomId(roomId)
-                        .content(lm.getContent())
-                         .createdAt(lm.getCreatedAt())
-                        .build());
-            }
+            if (lm != null)
+                roomResponse.setLatestMessage(lm);
 
             // Map Metadata
             if (roomId.contains("_")) {
@@ -390,7 +396,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
             RoomMember member = roomMemberTable.getItem(key);
 
-            return (member != null)? member.getUnreadMessages() : 0;
+            return (member != null) ? member.getUnreadMessages() : 0;
         } catch (Exception e) {
             return 0;
         }
@@ -477,8 +483,41 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             if (message.getMessageStatus() != null)
                 latestMessageMap.put("messageStatus", AttributeValue.builder().s(message.getMessageStatus().name()).build());
 
-            int attachmentSize = (message.getAttachments() != null) ? message.getAttachments().size() : 0;
-            latestMessageMap.put("attachmentSize", AttributeValue.builder().n(String.valueOf(attachmentSize)).build());
+            if (message.getMessageType() != null)
+                latestMessageMap.put("messageType", AttributeValue.builder().s(message.getMessageType().name()).build());
+
+            // Phân loại và đếm số lượng media / file
+            int mediaSize = 0;
+            int fileSize = 0;
+
+            if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
+                for (var attachment : message.getAttachments()) {
+                    String contentType = attachment.getContentType();
+
+                    if (contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/"))) {
+                        mediaSize++;
+                    } else {
+                        fileSize++;
+                    }
+                }
+            }
+
+            latestMessageMap.put("mediaSize", AttributeValue.builder().n(String.valueOf(mediaSize)).build());
+            latestMessageMap.put("fileSize", AttributeValue.builder().n(String.valueOf(fileSize)).build());
+
+            // Lưu Metadata (Chuyển đổi Map<String, String> sang Map<String, AttributeValue>)
+            if (message.getMetadata() != null && !message.getMetadata().isEmpty()) {
+                Map<String, AttributeValue> metadataMap = new HashMap<>();
+                message.getMetadata().forEach((key, value) ->
+                        metadataMap.put(key, AttributeValue.builder().s(value).build())
+                );
+                latestMessageMap.put("metadata", AttributeValue.builder().m(metadataMap).build());
+            }
+
+            // Lưu Action
+            if (message.getAction() != null) {
+                latestMessageMap.put("action", AttributeValue.builder().s(message.getAction().name()).build());
+            }
 
             if (message.getCreatedAt() != null)
                 latestMessageMap.put("createdAt", AttributeValue.builder().s(message.getCreatedAt()).build());
@@ -561,20 +600,22 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     }
 
     @Override
-    public RoomMemberResponse getMyProfile(String userId, String roomId) {
-        RoomMemberResponse member = getMember(userId, roomId);
-        Room room = roomService.getRoomById(roomId, false);
+    public MemberPermissionsResponse buildMemberPermission(RoomMemberResponse member, Room room) {
         MemberPermissionsResponse permissions = new MemberPermissionsResponse(); // mặc định false cho các quyền
 
         // Nếu là admin thì cho phép update settings phòng và giải tán
         if (member.getRole() == MemberRole.ADMIN) {
             permissions.setCanUpdateRoomSettings(true);
             permissions.setCanDisbandGroup(true);
+            permissions.setCanRemoveMember(true);
+            permissions.setCanUpdateMemberRole(true);
         }
 
-        // Duyệt thành viên nếu là trưởng hoặc phó nhóm
-        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN)
+        // Xem danh sách cần duyệt và duyệt thành viên nếu là trưởng hoặc phó nhóm
+        if (member.getRole() == MemberRole.ADMIN || member.getRole() == MemberRole.VICE_ADMIN) {
             permissions.setCanApproveMember(true);
+            permissions.setCanGetPendingRequests(true);
+        }
 
         // Nếu không phải là member hoặc phòng đã bật cho phép thêm thành viên
         if (member.getRole() != MemberRole.MEMBER || room.isAllowAddMember())
@@ -588,7 +629,16 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         if (member.getRole() != MemberRole.MEMBER || room.isAllowUpdateMetadata())
             permissions.setCanUpdateMetadata(true);
 
-        member.setPermissions(permissions);
+        return permissions;
+    }
+
+    @Override
+    public RoomMemberResponse getMyProfile(String userId, String roomId) {
+        RoomMemberResponse member = getMember(userId, roomId);
+        Room room = roomService.getRoomById(roomId, false);
+
+        member.setPermissions(buildMemberPermission(member, room));
+
         return member;
     }
 }

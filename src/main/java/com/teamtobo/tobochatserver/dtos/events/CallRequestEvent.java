@@ -9,4 +9,5 @@ public class CallRequestEvent {
     private String callerId;
     private String roomId;
     private String callerToken;
+    private Boolean isVideoCall;
 }

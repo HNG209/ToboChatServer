@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.dtos.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
@@ -18,7 +19,7 @@ public class RoomResponse {
     String roomName;
     String avatarUrl;
     RoomType roomType;
-    MessageResponse latestMessage;
+    LatestMessage latestMessage;
 
     Boolean allowAddMember;
     Boolean allowSendMessage;

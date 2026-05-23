@@ -1,6 +1,6 @@
 package com.teamtobo.tobochatserver.dtos.events;
 
-import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
+import com.teamtobo.tobochatserver.entities.Room;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 @AllArgsConstructor
 @Builder
-public class RoomUpdateEvent {
+public class MemberUpdateEvent {
     String roomId;
-    RoomUpdatePayload payload;
+    Room room;
 }
