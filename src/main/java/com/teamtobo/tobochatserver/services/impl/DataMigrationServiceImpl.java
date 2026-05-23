@@ -76,6 +76,8 @@ public class DataMigrationServiceImpl implements DataMigrationService {
                 // Migrate quan hệ nhóm
                 if (pk != null && pk.startsWith("ROOM#") && sk != null) {
                     String roomId = pk.replace("ROOM#", "");
+                    // Bỏ qua phòng cá nhân (DM)
+                    if (roomId.contains("_")) return;
 
                     if (sk.startsWith("MEMBER#")) {
                         String memberId = sk.replace("MEMBER#", "");
