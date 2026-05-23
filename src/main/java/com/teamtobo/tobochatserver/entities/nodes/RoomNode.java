@@ -11,7 +11,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Node("Room")
-@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class RoomNode {
     @Id
     private String id;
@@ -22,12 +26,12 @@ public class RoomNode {
     private Set<UserNode> addedUsers = new HashSet<>();
 
     // 2. Được mời vào phòng (Cạnh SENT chứa inviterId từ User đến Room)
-    @Relationship(type = "SENT", direction = Relationship.Direction.INCOMING)
+    @Relationship(type = "SENT", direction = Relationship.Direction.OUTGOING)
     @Builder.Default
     private Set<SentRel> sentUsers = new HashSet<>();
 
     // 3. Chờ duyệt vào phòng (Cạnh PENDING chứa inviterId từ User đến Room)
-    @Relationship(type = "PENDING", direction = Relationship.Direction.INCOMING)
+    @Relationship(type = "PENDING", direction = Relationship.Direction.OUTGOING)
     @Builder.Default
     private Set<PendingRel> pendingUsers = new HashSet<>();
 }

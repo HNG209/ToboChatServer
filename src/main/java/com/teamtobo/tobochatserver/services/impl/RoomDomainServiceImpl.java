@@ -18,6 +18,8 @@ import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -840,19 +842,30 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         log.info("[Neo4j] Thực hiện gán cạnh INVITED từ User {} tới Room {} - Người mời: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
-        roomNodeRepository.createSent(roomId, inviterId, targetUserId);
+        roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
     }
 
     @Override
     public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         log.info("[Neo4j] Thực hiện gán cạnh PENDING_APPROVAL từ User {} tới Room {} - Người mời duyệt: {} (Tự động xóa trạng thái cũ nếu có)", targetUserId, roomId, inviterId);
-        roomNodeRepository.createPending(roomId, inviterId, targetUserId);
+        roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);
     }
 
     @Override
-    public List<String> getJoinedRoomIdsNeo4j(String userId) {
-        log.info("[Neo4j] Lấy danh sách ID phòng mà User {} đã tham gia", userId);
-        return roomNodeRepository.findRoomIdsByUserId(userId);
+    public PageResponse<String> getJoinedRoomIdsNeo4j(String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<String> roomIds = roomNodeRepository.findRoomIdsByUserId(userId, pageable);
+
+        boolean hasNext = roomIds.size() > pageable.getPageSize();
+
+        List<String> currentRoomIds = hasNext ? roomIds.subList(0, limit) : roomIds;
+
+        return PageResponse.<String>builder()
+                .items(currentRoomIds)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
     }
 
     @Override
@@ -876,7 +889,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void deleteMemberRelationshipNeo4j(String roomId, String userId) {
         log.info("[Neo4j] Thực hiện xóa mọi quan hệ giữa User {} và Room {}", userId, roomId);
-        roomNodeRepository.deleteRelation(roomId, userId);
+        roomNodeRepository.deleteRelationship(roomId, userId);
     }
 
 }

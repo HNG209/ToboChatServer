@@ -36,10 +36,7 @@ public interface RoomDomainService {
     void addMemberNeo4j(String roomId, String userId);
     void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId);
     void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId);
-
-    List<String> getJoinedRoomIdsNeo4j(String userId);
-
+    PageResponse<String> getJoinedRoomIdsNeo4j(String userId, String cursor, int limit);
     MemberStatus getMemberStatusNeo4j(String roomId, String userId);
-
     void deleteMemberRelationshipNeo4j(String roomId, String userId);
 }

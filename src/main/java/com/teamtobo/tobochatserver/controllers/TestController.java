@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.google.protobuf.Api;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
@@ -141,9 +142,14 @@ public class TestController {
 
     @Operation(summary = "Lấy danh sách ID các phòng mà một User đã tham gia")
     @GetMapping("/joined-rooms")
-    public ResponseEntity<List<String>> getJoinedRooms(@RequestParam String userId) {
-        List<String> roomIds = roomDomainService.getJoinedRoomIdsNeo4j(userId);
-        return ResponseEntity.ok(roomIds);
+    public ApiResponse<PageResponse<String>> getJoinedRooms(
+            @RequestParam String userId,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit) {
+        PageResponse<String> roomIds = roomDomainService.getJoinedRoomIdsNeo4j(userId, cursor, limit);
+        return ApiResponse.<PageResponse<String>>builder()
+                .result(roomIds)
+                .build();
     }
 
     @Operation(summary = "Lấy trạng thái mối quan hệ hiện tại giữa User và Phòng")
