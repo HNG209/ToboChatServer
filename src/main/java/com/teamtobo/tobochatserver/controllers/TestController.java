@@ -163,6 +163,19 @@ public class TestController {
                 .build();
     }
 
+    @Operation(summary = "Danh sách lời mời vào nhóm")
+    @GetMapping("/accept-requests")
+    public ApiResponse<PageResponse<GroupAcceptRequestResponse>> getAcceptRequests(
+            @RequestParam String userId,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit) {
+        PageResponse<GroupAcceptRequestResponse> acceptRequests =
+                roomDomainService.getAcceptRequests(userId, cursor, limit);
+        return ApiResponse.<PageResponse<GroupAcceptRequestResponse>>builder()
+                .result(acceptRequests)
+                .build();
+    }
+
     @Operation(summary = "Lấy trạng thái mối quan hệ hiện tại giữa User và Phòng")
     @GetMapping("/member-status")
     public ResponseEntity<MemberStatus> getMemberStatus(

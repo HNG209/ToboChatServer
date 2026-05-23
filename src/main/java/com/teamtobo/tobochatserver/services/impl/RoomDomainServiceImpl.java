@@ -28,6 +28,7 @@ import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhanced
 
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -831,13 +832,53 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
 
-    //----------------------
+    // -----Neo4j services-----
 
     @Override
     public void addMemberNeo4j(String roomId, String userId) {
         roomNodeRepository.addMember(roomId, userId);
     }
 
+    // Danh sách lời mời vào nhóm
+    @Override
+    public PageResponse<GroupAcceptRequestResponse> getAcceptRequests(String userId, String cursor, int limit) {
+        int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        List<RoomNodeRepository.AcceptRequestData> requestDataList = roomNodeRepository.findAcceptRequestsByUserId(userId, pageable);
+
+        boolean hasNext = requestDataList.size() > limit;
+        List<RoomNodeRepository.AcceptRequestData> currentRequests = hasNext ? requestDataList.subList(0, limit) : requestDataList;
+
+        if (currentRequests.isEmpty()) {
+            return PageResponse.<GroupAcceptRequestResponse>builder().items(List.of()).build();
+        }
+
+        Set<String> inviterIdsToFetch = currentRequests.stream()
+                .map(RoomNodeRepository.AcceptRequestData::inviterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<String, UserResponse> userProfileMap = userService.getUsersMapByIds(new ArrayList<>(inviterIdsToFetch));
+
+        List<GroupAcceptRequestResponse> items = currentRequests.stream().map(req -> {
+            Room room = roomService.getRoomById(req.roomId(), false);
+
+            return GroupAcceptRequestResponse.builder()
+                    .roomId(req.roomId())
+                    .roomName(room != null ? room.getRoomName() : "Nhóm ToboChat")
+                    .avatarUrl(room != null ? room.getAvatarUrl() : null)
+                    .inviter(userProfileMap.get(req.inviterId())) // Gắn profile người mời
+                    .build();
+        }).toList();
+
+        return PageResponse.<GroupAcceptRequestResponse>builder()
+                .items(items)
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    // Danh sách người dùng chờ duyệt vào nhóm
     @Override
     public PageResponse<GroupPendingRequestResponse> getPendingRequests(String roomId, String userId, String cursor, int limit) {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
@@ -876,11 +917,13 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .build();
     }
 
+    // Tạo lời mời vào nhóm
     @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
     }
 
+    // Tạo lời mời chờ duyệt
     @Override
     public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);

@@ -20,7 +20,6 @@ public interface RoomDomainService {
     void updateMember(String roomId, String targetUserId, MemberUpdateRequest request);
     void removeMember(String roomId, String removerId, String memberId);
     void disbandGroup(String roomId);
-//    PageResponse<GroupAcceptRequest> getSentInvites(String roomId, String cursor, int limit);
     LeaveCheckResponse checkLeave(String userId, String roomId);
     void leaveGroup(String userId, String roomId, String newAdminId);
     RoomMember getMember(String roomId, String userId);
@@ -28,9 +27,9 @@ public interface RoomDomainService {
     void updateRoomName(String userId, String roomId, String roomName);
 
 
-    //-----------------
-
+    // -----Neo4j services-----
     void addMemberNeo4j(String roomId, String userId);
+    PageResponse<GroupAcceptRequestResponse> getAcceptRequests(String userId, String cursor, int limit);
     PageResponse<GroupPendingRequestResponse> getPendingRequests(String roomId, String userId, String cursor, int limit);
     void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId);
     void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId);

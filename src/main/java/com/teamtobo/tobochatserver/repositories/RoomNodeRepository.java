@@ -78,4 +78,12 @@ public interface RoomNodeRepository extends Neo4jRepository<RoomNode, String> {
             "SKIP :#{#pageable.offset} " +
             "LIMIT :#{#pageable.pageSize + 1}")
     List<PendingRequestData> findPendingRequests(String roomId, Pageable pageable);
+
+    record AcceptRequestData(String roomId, String inviterId) {}
+    @Query("MATCH (r:Room)-[rel:SENT]->(u:User {id: $userId}) " +
+            "RETURN r.id AS roomId, rel.inviterId AS inviterId " +
+            "ORDER BY r.id ASC " +
+            "SKIP :#{#pageable.offset} " +
+            "LIMIT :#{#pageable.pageSize + 1}")
+    List<AcceptRequestData> findAcceptRequestsByUserId(String userId, Pageable pageable);
 }
