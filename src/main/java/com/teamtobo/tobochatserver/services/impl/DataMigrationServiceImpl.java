@@ -1,6 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.entities.GenericItem;
+import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
+import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.DataMigrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DataMigrationServiceImpl implements DataMigrationService {
     private final DynamoDbEnhancedClient enhancedClient;
     private final Neo4jClient neo4jClient;
+    private final RoomNodeRepository roomNodeRepository;
 
     @Value("${aws.dynamodb.tableName:ToboChatTable}")
     private String tableName;
@@ -48,6 +51,7 @@ public class DataMigrationServiceImpl implements DataMigrationService {
                 String pk = item.getPk();
                 String sk = item.getSk();
 
+                // Migrate quan hệ bạn bè
                 if (pk != null && pk.startsWith("USER#") && sk != null) {
                     String userId = pk.replace("USER#", "");
 
@@ -61,6 +65,25 @@ public class DataMigrationServiceImpl implements DataMigrationService {
                     } else if (sk.startsWith("REQUEST#")) {
                         String targetId = sk.replace("REQUEST#", "");
                         createRequestRelationship(userId, targetId);
+                        totalRelationships.incrementAndGet();
+                    } else if (sk.startsWith("ROOM_ACCEPT#")) {
+                        String roomId = pk.replace("ROOM_ACCEPT#", "");
+                        roomNodeRepository.createSentRequest(roomId, null, userId);
+                        totalRelationships.incrementAndGet();
+                    }
+                }
+
+                // Migrate quan hệ nhóm
+                if (pk != null && pk.startsWith("ROOM#") && sk != null) {
+                    String roomId = pk.replace("ROOM#", "");
+
+                    if (sk.startsWith("MEMBER#")) {
+                        String memberId = sk.replace("MEMBER#", "");
+                        roomNodeRepository.addMember(roomId, memberId);
+                        totalRelationships.incrementAndGet();
+                    } else if (sk.startsWith("PENDING#")) {
+                        String userId = sk.replace("PENDING#", "");
+                        roomNodeRepository.createPendingRequest(roomId, null, userId);
                         totalRelationships.incrementAndGet();
                     }
                 }

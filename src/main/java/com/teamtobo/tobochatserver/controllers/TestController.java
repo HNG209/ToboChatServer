@@ -98,7 +98,7 @@ public class TestController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Phản hồi lời mời kết bạn (Chấp nhận / Từ chối)")
+    @Operation(summary = "Xoá bạn bè")
     @DeleteMapping("{userId}/friends/{otherId}")
     public ResponseEntity<Void> deleteFriend(
             @PathVariable String userId,

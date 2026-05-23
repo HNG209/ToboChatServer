@@ -76,7 +76,7 @@ public class ContactServiceImpl implements ContactService {
                             .id(friend.getId())
                             .name(userRes != null ? userRes.getName() : "Người dùng ToboChat")
                             .avatarUrl(userRes != null ? userRes.getAvatarUrl() : null)
-                            .memberStatus(memberStatusMap.getOrDefault(friend.getId(), MemberStatus.NOT_IN_GROUP))
+                            .memberStatus(memberStatusMap.getOrDefault(friend.getId(), null))
                             .build();
                 }).toList())
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
