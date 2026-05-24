@@ -61,7 +61,7 @@ public class InboxEventHandler {
 
                     socketIOServer.getRoomOperations(memberId)
                             .sendEvent("inbox_updated", Map.of(
-                                    "message", event.getMessage(),
+                                    "message", chatService.buildLatestMessage(event.getMessage()),
                                     "inboxStatus", inboxStatus
                             ));
 

@@ -644,29 +644,6 @@ public class ChatServiceImpl implements ChatService {
                 .build();
     }
 
-    private MessageResponse mapToResponse(Message message, String userId) {
-        boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
-
-        String messageId = message.getSk().replaceFirst("^MSG#", "");
-
-        StringBuilder content = new StringBuilder();
-
-        if (message.getContent() != null && !message.getContent().isBlank()) {
-            content.append(message.getContent());
-        }
-
-        if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
-            content.append(message.getAttachments().size() > 1 ? " [attachments]" : " [attachment]");
-        }
-
-        return MessageResponse.builder()
-                .id(messageId)
-                .content(isRevoked ? "Tin nhắn đã được thu hồi" : content.toString())
-                .messageStatus(message.getMessageStatus())
-                .createdAt(message.getCreatedAt() != null ? message.getCreatedAt() : messageId)
-                .build();
-    }
-
     private boolean isDeletedForUser(Message msg, String userId) {
         return msg.getDeletedByUserIds() != null && msg.getDeletedByUserIds().contains(userId);
     }
