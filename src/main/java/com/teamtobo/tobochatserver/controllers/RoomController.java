@@ -128,11 +128,14 @@ public class RoomController {
     @GetMapping("/{roomId}/pending-requests")
     @RequireMemberPermission(MemberPermission.GET_PENDING_REQUESTS)
     public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPendingRequests(
+            @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
+        String userId = jwt.getSubject();
         return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
-                .result(groupPendingRequestService.getPending(roomId, limit))
+                .result(roomDomainService.getPendingRequests(roomId, userId, cursor, limit))
                 .build();
     }
 

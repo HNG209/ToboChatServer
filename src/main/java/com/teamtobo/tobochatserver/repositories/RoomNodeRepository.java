@@ -86,4 +86,9 @@ public interface RoomNodeRepository extends Neo4jRepository<RoomNode, String> {
             "SKIP :#{#pageable.offset} " +
             "LIMIT :#{#pageable.pageSize + 1}")
     List<AcceptRequestData> findAcceptRequestsByUserId(String userId, Pageable pageable);
+
+    // Lấy ID người mời của một yêu cầu chờ duyệt cụ thể
+    @Query("MATCH (r:Room {id: $roomId})-[rel:PENDING]->(u:User {id: $userId}) " +
+            "RETURN rel.inviterId")
+    String getPendingInviterId(String roomId, String userId);
 }

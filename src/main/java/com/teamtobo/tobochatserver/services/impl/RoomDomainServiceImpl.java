@@ -48,9 +48,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final RoomMemberService roomMemberService;
     private final ChatService chatService;
 
-    private final DynamoDbTable<GroupAcceptRequest> groupAcceptRequestTable;
-    private final DynamoDbTable<GroupPendingRequest> groupPendingRequestTable;
-
     private final ApplicationEventPublisher eventPublisher;
 
     private final RoomNodeRepository roomNodeRepository;
@@ -111,63 +108,66 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     public void approveMember(String roomId, String adminId, String targetUserId, boolean accept) {
         Room room = roomService.getRoomById(roomId, true);
 
-        String pk = "ROOM#" + roomId;
-        String sk = "PENDING#" + targetUserId;
+        // Id người chủ động thêm
+        String inviterId = roomNodeRepository.getPendingInviterId(roomId, targetUserId);
 
-        GroupPendingRequest pending = groupPendingRequestTable.getItem(
-                Key.builder().partitionValue(pk).sortValue(sk).build()
-        );
-
-        if (pending == null) {
+        if (inviterId == null) {
             throw new AppException(ErrorCode.PENDING_REQUEST_NOT_FOUND);
         }
 
-        //xoá pending trước
-        groupPendingRequestTable.deleteItem(
-                Key.builder().partitionValue(pk).sortValue(sk).build()
-        );
+        if (room.getPendingCount() > 0) {
+            room.setPendingCount(room.getPendingCount() - 1);
+            roomTable.updateItem(room);
+        }
 
-        room.setPendingCount(room.getPendingCount() - 1);
-        roomTable.updateItem(room);
+        if (!accept) {
+            deleteMemberRelationshipNeo4j(roomId, targetUserId);
+            return;
+        }
 
-        //reject
-        if (!accept) return;
-
-        //tránh add trùng
+        // Tránh add trùng nếu đã là member
         if (isMember(roomId, targetUserId)) return;
 
         User targetUser = userService.getUserById(targetUserId);
 
-        //tránh tạo accept request trùng
-        GroupAcceptRequest existed = groupAcceptRequestTable.getItem(
-                Key.builder()
-                        .partitionValue("USER#" + targetUserId)
-                        .sortValue("ROOM_ACCEPT#" + roomId)
-                        .build()
-        );
+        // Tránh tạo accept request trùng
+        MemberStatus currentStatus = getMemberStatusNeo4j(roomId, targetUserId);
+        if (currentStatus == MemberStatus.SENT) return;
 
-        if (existed != null) return;
-
+        // Xử lý theo setting cá nhân của User
         if (targetUser.isAllowAutoAddToGroup()) {
             addMember(roomId, targetUserId);
+
             socketIOServer.getRoomOperations(targetUserId)
-                    .sendEvent("new_room", RoomResponse.builder()
-                            .id(roomId)
-                            .roomName(room.getRoomName())
-                            .roomType(room.getRoomType())
-                            .avatarUrl(room.getAvatarUrl())
-                            .allowAddMember(room.isAllowAddMember())
-                            .allowSendMessage(room.isAllowSendMessage())
-                            .allowUpdateMetadata(room.isAllowUpdateMetadata())
-                            .approveMember(room.isApproveMember())
-                            .memberCount(room.getMemberCount())
-                            // Nếu phòng đã có tin nhắn trước đó
-                            .latestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(targetUserId, roomId)))
-                            // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
+                    .sendEvent("new_room", NewRoomPayload.builder()
+                            .room(RoomResponse.builder()
+                                    .id(roomId)
+                                    .roomName(room.getRoomName())
+                                    .roomType(room.getRoomType())
+                                    .avatarUrl(room.getAvatarUrl())
+                                    .allowAddMember(room.isAllowAddMember())
+                                    .allowSendMessage(room.isAllowSendMessage())
+                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                                    .approveMember(room.isApproveMember())
+                                    .memberCount(room.getMemberCount())
+                                    // Nếu phòng đã có tin nhắn trước đó
+                                    .latestMessage(chatService.buildLatestMessage(
+                                            chatService.getRoomLatestMessage(roomId)))
+                                    .build())
+                            .inboxStatus(InboxStatus.ACTIVE)
                             .build());
+
+            // Tạo tin nhắn hệ thống
+            eventPublisher.publishEvent(
+                    new SystemMessageCreateEvent(
+                            roomId,
+                            adminId,
+                            SystemAction.MEMBER_APPROVED,
+                            Map.of("approvedMemberId", targetUserId,
+                                    "approvedMemberName", targetUser.getName()))
+            );
         } else {
-//            createGroupAcceptRequest(roomId, adminId, targetUserId, room.getRoomName());
-            createGroupAcceptRequestNeo4j(roomId, adminId, targetUserId);
+            createGroupAcceptRequestNeo4j(roomId, inviterId, targetUserId);
         }
     }
 
@@ -233,6 +233,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         roomMemberTable.deleteItem(target);
+
+        // Xoá cạnh quan hệ trong Neo4j
+        deleteMemberRelationshipNeo4j(roomId, memberId);
 
         // Sự kiện cho người bị kick
         socketIOServer.getRoomOperations(memberId)
@@ -332,6 +335,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         txBuilder.addDeleteItem(roomMemberTable, member);
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
+
+            // Xoá cạnh quan hệ trong Neo4j
+            deleteMemberRelationshipNeo4j(roomId, userId);
 
             // Tạo tin nhắn hệ thống
             eventPublisher.publishEvent(
@@ -626,14 +632,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private MemberStatus handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
         String roomId = room.getPk().replace("ROOM#", "");
         String inviterId = inviter.getMemberId();
-        String roomName = room.getRoomName();
 
         // Nhóm có xét duyệt không?
         if (room.isApproveMember()) {
             // Inviter có phải Admin không?
             if (inviter.getRole() != MemberRole.ADMIN) {
                 // Thành viên thường thêm người thì phải chờ duyệt (Pending)
-//                createGroupPendingRequest(roomId, inviterId, targetUserId, roomName);
                 createGroupPendingRequestNeo4j(roomId, inviterId, targetUserId);
                 return MemberStatus.PENDING;
             }
@@ -660,7 +664,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                     // Nếu phòng đã có tin nhắn trước đó
                                     .latestMessage(chatService.buildLatestMessage(
                                             chatService.getRoomLatestMessage(roomId)))
-                                    // TODO: chỉ lấy được pending count nếu là admin hoặc vice admin
                                     .build())
                             .inboxStatus(InboxStatus.ACTIVE)
                             .build());
@@ -690,7 +693,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             return MemberStatus.ADDED;
         }
 
-//        createGroupAcceptRequest(roomId, inviterId, targetUserId, roomName);
         createGroupAcceptRequestNeo4j(roomId, inviterId, targetUserId);
         return MemberStatus.SENT;
     }
@@ -761,46 +763,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.ADD_MEMBER_ERROR);
         }
     }
-
-//    private void createGroupAcceptRequest(String roomId, String inviterId, String targetUserId, String roomName) {
-//        groupAcceptRequestTable.putItem(
-//                GroupAcceptRequest.builder()
-//                        .pk("USER#" + targetUserId)
-//                        .sk("ROOM_ACCEPT#" + roomId)
-//                        .roomId(roomId)
-//                        .groupRequestPk("ROOM_ACCEPT#" + roomId)
-//                        .receiverSk("USER#" + targetUserId)
-//                        .inviterId(inviterId)
-//                        .roomName(roomName)
-//                        .build()
-//        );
-//    }
-
-//    private void createGroupPendingRequest(String roomId, String inviterId, String targetUserId, String roomName) {
-//        TransactWriteItemsEnhancedRequest.Builder tx =
-//                TransactWriteItemsEnhancedRequest.builder();
-//
-//        Room room = roomService.getRoomById(roomId, true);
-//        room.setPendingCount(room.getPendingCount() + 1);
-//        tx.addUpdateItem(roomTable, room);
-//
-//        GroupPendingRequest groupPendingRequest = GroupPendingRequest.builder()
-//                .pk("ROOM#" + roomId)
-//                .sk("PENDING#" + targetUserId)
-//                .roomId(roomId)
-//                .userId(targetUserId)
-//                .requesterId(inviterId)
-//                .roomName(roomName)
-//                .build();
-//
-//        tx.addPutItem(groupPendingRequestTable, groupPendingRequest);
-//
-//        try {
-//            enhancedClient.transactWriteItems(tx.build());
-//        } catch (Exception e) {
-//            throw new AppException(ErrorCode.GROUP_PENDING_ERROR);
-//        }
-//    }
 
     @Override
     public void updateRoomAvatar(String userId, String roomId, String avatarUrl) {
@@ -971,6 +933,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         addMember(roomId, userId);
+
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        userId,
+                        SystemAction.GROUP_INVITE_ACCEPTED,
+                        null));
     }
 
     @Override
