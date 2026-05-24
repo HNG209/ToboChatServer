@@ -40,6 +40,10 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-neo4j</artifactId>
+        </dependency>
         <!-- Source: https://mvnrepository.com/artifact/io.livekit/livekit-server -->
         <dependency>
             <groupId>io.livekit</groupId>

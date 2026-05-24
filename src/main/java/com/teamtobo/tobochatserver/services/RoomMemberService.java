@@ -1,9 +1,7 @@
 package com.teamtobo.tobochatserver.services;
 
-import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
-import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
+import com.teamtobo.tobochatserver.dtos.response.*;
+import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 
@@ -15,6 +13,7 @@ public interface RoomMemberService {
     RoomMember getMemberById(String memberId, String roomId);
     RoomMemberResponse getMember(String memberId, String roomId);
     RoomMemberResponse getMyProfile(String userId, String roomId);
+    MemberPermissionsResponse buildMemberPermission(RoomMemberResponse member, Room room);
     PageResponse<RoomResponse> getJoinedRooms(String userId, String cursor, int limit, InboxStatus status);
     RoomResponse getRoomMetadata(String userId, String roomId);
     void increaseUnreadCount(String senderId, String roomId);

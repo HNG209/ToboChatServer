@@ -5,6 +5,7 @@ import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
 import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
+import com.teamtobo.tobochatserver.services.RoomDomainService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class GroupAcceptRequestController {
 
     private final GroupAcceptRequestService groupAcceptRequestService;
+    private final RoomDomainService roomDomainService;
 
     @Operation(summary = "Lấy danh sách lời mời vào nhóm")
     @GetMapping
@@ -28,8 +30,9 @@ public class GroupAcceptRequestController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
+        String userId = jwt.getSubject();
         return ApiResponse.<PageResponse<GroupAcceptRequestResponse>>builder()
-                .result(groupAcceptRequestService.getInvites(jwt.getSubject(), cursor, limit))
+                .result(roomDomainService.getAcceptRequests(userId, cursor, limit))
                 .build();
     }
 
@@ -40,8 +43,10 @@ public class GroupAcceptRequestController {
             @PathVariable String roomId,
             @RequestParam(defaultValue = "true") boolean accepted
     ) {
+        String userId = jwt.getSubject();
+        roomDomainService.respondInviteNeo4j(userId, roomId, accepted);
         return ApiResponse.<RoomResponse>builder()
-                .result(groupAcceptRequestService.respondInvite(jwt.getSubject(), roomId, accepted))
+                .result(null)
                 .build();
     }
 }

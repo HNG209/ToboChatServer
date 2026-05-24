@@ -13,4 +13,5 @@ public class IcomingCallDto {
     String callerId;
     String token;
     RoomResponse room;
+    Boolean isVideoCall;
 }

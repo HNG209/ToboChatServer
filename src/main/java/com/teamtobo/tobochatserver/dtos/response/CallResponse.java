@@ -11,4 +11,5 @@ import lombok.experimental.FieldDefaults;
 public class CallResponse {
     String token;
     String roomId;
+    Boolean isVideoCall;
 }

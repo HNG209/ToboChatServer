@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.events.CallRequestEvent;
 import com.teamtobo.tobochatserver.dtos.request.CallRequest;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
+import com.teamtobo.tobochatserver.entities.enums.CallStatus;
 import com.teamtobo.tobochatserver.services.CallService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -39,7 +42,8 @@ public class CallEventHandler {
 
                 String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
                 socketIOServer.getRoomOperations(memberId)
-                        .sendEvent("incoming_call", new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId)));
+                        .sendEvent("incoming_call",
+                                new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId), event.getIsVideoCall()));
 
                 log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
             }
@@ -58,6 +62,10 @@ public class CallEventHandler {
 
             for (RoomMemberResponse member : pageResponse.getItems()) {
                 String memberId = member.getId();
+
+                socketIOServer.getRoomOperations(memberId).sendEvent("call_status_updated",
+                        Map.of("roomId", roomId,
+                                "status", CallStatus.INACTIVE));
 
                 if (memberId.equals(callerId)) continue;
 

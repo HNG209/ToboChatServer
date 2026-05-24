@@ -6,8 +6,6 @@ import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
-import com.teamtobo.tobochatserver.exception.AppException;
-import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -46,7 +44,7 @@ public class RoomController {
 
     @Operation(summary = "Cài đặt trạng thái phòng")
     @PatchMapping("/{roomId}")
-    @RequireAdmin
+    @RequireMemberPermission(MemberPermission.UPDATE_ROOM_SETTINGS)
     public ResponseEntity<Void> updateRoomSettings(
             @RoomId @PathVariable String roomId,
             @RequestBody RoomUpdateRequest request
@@ -86,9 +84,10 @@ public class RoomController {
 
     @Operation(summary = "Lấy thông tin phòng")
     @GetMapping("/{roomId}")
+    @RequireRoomMember
     public ApiResponse<RoomResponse> getRoomMetadata(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId) {
+            @RoomId @PathVariable String roomId) {
         String userId = jwt.getSubject();
 
         RoomResponse response = roomMemberService.getRoomMetadata(userId, roomId);
@@ -112,7 +111,7 @@ public class RoomController {
 
     @Operation(summary = "Thêm thành viên vào nhóm chat")
     @PostMapping("/{roomId}/members")
-    @RequirePermission(MemberPermission.ADD_MEMBER)
+    @RequireMemberPermission(MemberPermission.ADD_MEMBER)
     @RequireRoomMember
     public ApiResponse<List<FriendResponse>> addMembers(
             @AuthenticationPrincipal Jwt jwt,
@@ -127,22 +126,22 @@ public class RoomController {
 
     @Operation(summary = "Lấy danh sách pending request của nhóm")
     @GetMapping("/{roomId}/pending-requests")
-    @RequirePermission(MemberPermission.GET_PENDING_REQUESTS)
+    @RequireMemberPermission(MemberPermission.GET_PENDING_REQUESTS)
     public ApiResponse<PageResponse<GroupPendingRequestResponse>> getPendingRequests(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
+            @RequestParam(defaultValue = "0", required = false) String cursor,
             @RequestParam(defaultValue = "10") int limit
     ) {
         String userId = jwt.getSubject();
-
         return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
-                .result(groupPendingRequestService.getPending(roomId, userId, limit))
+                .result(roomDomainService.getPendingRequests(roomId, userId, cursor, limit))
                 .build();
     }
 
     @Operation(summary = "Lấy danh sách người được mời vào nhóm chưa chấp nhận")
     @GetMapping("/{roomId}/sent-requests")
-    @RequirePermission(MemberPermission.GET_SENT_REQUESTS)
+    @RequireMemberPermission(MemberPermission.GET_SENT_REQUESTS)
     public ApiResponse<PageResponse<GroupSentRequestResponse>> getSentRequests(
             @RoomId @PathVariable String roomId,
             @RequestParam(required = false) String cursor,
@@ -168,7 +167,7 @@ public class RoomController {
 
     @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
     @PatchMapping("/{roomId}/pending-requests/{userId}")
-    @RequirePermission(MemberPermission.APPROVE_MEMBER)
+    @RequireMemberPermission(MemberPermission.APPROVE_MEMBER)
     public ResponseEntity<Void> approveMember(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
@@ -187,19 +186,21 @@ public class RoomController {
 
     @Operation(summary = "Chỉnh sửa quyền member")
     @PatchMapping("/{roomId}/members/{memberId}")
-    @RequireAdmin
+    @RequireMemberPermission(MemberPermission.UPDATE_MEMBER_ROLE)
     public ResponseEntity<Void> updateMember(
             @RoomId @PathVariable String roomId,
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable String memberId,
             @RequestBody MemberUpdateRequest request
     ) {
-        roomDomainService.updateMember(roomId, memberId, request);
+        String userId = jwt.getSubject();
+        roomDomainService.updateMemberRole(roomId, userId, memberId, request);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "Xoá thành viên ra khỏi nhóm")
     @DeleteMapping("/{roomId}/members/{memberId}")
-    @RequirePermission(MemberPermission.REMOVE_MEMBER)
+    @RequireMemberPermission(MemberPermission.REMOVE_MEMBER)
     public ResponseEntity<Void> removeMember(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
@@ -236,7 +237,7 @@ public class RoomController {
 
     @Operation(summary = "Giải tán nhóm")
     @DeleteMapping("/{roomId}")
-    @RequireAdmin
+    @RequireMemberPermission(MemberPermission.DISBAND_GROUP)
     public ResponseEntity<Void> disbandGroup(@RoomId @PathVariable String roomId) {
         roomDomainService.disbandGroup(roomId);
         return ResponseEntity.noContent().build();
@@ -244,7 +245,7 @@ public class RoomController {
 
     @Operation(summary = "Lấy presigned URL để upload avatar phòng")
     @GetMapping("/{roomId}/avatar/upload-url")
-    @RequireAdmin
+    @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
     public ApiResponse<PresignedUploadResponse> getRoomAvatarUploadUrl(
             @RoomId @PathVariable String roomId,
             @RequestParam String contentType) {
@@ -255,6 +256,7 @@ public class RoomController {
 
     @Operation(summary = "Cập nhật avatar phòng")
     @PatchMapping("/{roomId}/avatar")
+    @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
     public ResponseEntity<Void> updateRoomAvatar(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
@@ -266,6 +268,7 @@ public class RoomController {
 
     @Operation(summary = "Cập nhật tên phòng")
     @PatchMapping("/{roomId}/name")
+    @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
     public ResponseEntity<Void> updateRoomName(
             @AuthenticationPrincipal Jwt jwt,
             @RoomId @PathVariable String roomId,
