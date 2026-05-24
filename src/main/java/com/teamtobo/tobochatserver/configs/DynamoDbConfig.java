@@ -15,7 +15,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 public class DynamoDbConfig {
     @Value("${aws.dynamodb.tableName:ToboChatTable}")
     private String tableName;
-    private String attachmentTableName = "Attachment";
+
     @Bean
     public DynamoDbClient dynamoDbClient() {
         // Tự động lấy credential trong máy (.aws/credentials) hoặc biến môi trường
@@ -76,8 +76,9 @@ public class DynamoDbConfig {
     public DynamoDbTable<GroupPendingRequest> groupPendingRequestTable(DynamoDbEnhancedClient enhancedClient) {
         return enhancedClient.table(tableName, TableSchema.fromBean(GroupPendingRequest.class));
     }
+
     @Bean
     public DynamoDbTable<AttachmentItem> attachmentItemTable(DynamoDbEnhancedClient enhancedClient) {
-        return enhancedClient.table(attachmentTableName, TableSchema.fromBean(AttachmentItem.class));
+        return enhancedClient.table(tableName, TableSchema.fromBean(AttachmentItem.class));
     }
 }

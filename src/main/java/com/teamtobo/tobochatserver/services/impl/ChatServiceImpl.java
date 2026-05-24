@@ -616,6 +616,7 @@ public class ChatServiceImpl implements ChatService {
                 .roomId(message.getRoomId())
                 .messageId(message.getId())
                 .userId(message.getUser().getId())
+                .messageType(message.getMessageType())
                 .messageStatus(message.getMessageStatus())
                 .metadata(message.getMetadata())
                 .fileSize(fileSize)

@@ -2,7 +2,6 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.AttachmentSaveEvent;
-import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
@@ -23,7 +22,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 
 import java.time.Instant;
 import java.util.*;
@@ -114,7 +112,6 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 }
             }
 
-            // 3. Lưu Message vào DB
             Message message = Message.builder()
                     .sk(sk)
                     .pk(pk)
@@ -153,10 +150,11 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             eventPublisher.publishEvent(
                     new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE)
             );
+
             if (!rawAttachments.isEmpty()) {
                 eventPublisher.publishEvent(AttachmentSaveEvent.builder()
                         .roomId(roomId)
-                        .messageId(part) // 'part' chính là ID tin nhắn dạng timestamp#uuid của bạn
+                        .messageId(part)
                         .senderId(senderId)
                         .createdAt(now)
                         .rawAttachments(rawAttachments)   // Truyền list chứa URL tạm (để bóc sourceKey)
@@ -164,6 +162,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                         .isForwarded(isForwarded)
                         .build());
             }
+
             return messageResponse; // Chứa id thực tế của message đã lưu
         } catch (AppException e) {
             throw e;
