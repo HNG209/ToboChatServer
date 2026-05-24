@@ -1,6 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.teamtobo.tobochatserver.dtos.events.AttachmentSaveEvent;
+import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
@@ -87,43 +89,28 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     throw new AppException(ErrorCode.SEND_MESSAGE_NOT_ALLOWED);
             }
 
-            // Xử lý attachments
             List<Attachment> finalAttachments = new ArrayList<>();
+            // Lưu lại danh sách URL tạm ban đầu của Client gửi lên để truyền vào Event làm sourceKey
+            List<Attachment> rawAttachments = request.getAttachments() != null ? request.getAttachments() : new ArrayList<>();
+            boolean isForwarded = request.getMessageType() == MessageType.FORWARDED;
 
-            // Nếu là tin nhắn chuyển tiếp thì không cần lưu xuống S3 nữa
-            if(request.getMessageType() == MessageType.FORWARDED)
-                finalAttachments = request.getAttachments();
+            if (isForwarded) {
+                finalAttachments = rawAttachments;
+            } else if (!rawAttachments.isEmpty()) {
+                for (Attachment att : rawAttachments) {
+                    // Tạo trước đường dẫn đích (destination) sạch sẽ dựa trên UUID
+                    String fileExtension = att.getFileName().contains(".")
+                            ? att.getFileName().substring(att.getFileName().lastIndexOf(".")) : "";
+                    String destKey = "attachments/" + roomId + "/" + UUID.randomUUID() + fileExtension;
+                    String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s", bucketName, region, destKey);
 
-            if (request.getMessageType() != MessageType.FORWARDED
-                    && request.getAttachments() != null
-                    && !request.getAttachments().isEmpty()) {
-                for (Attachment att : request.getAttachments()) {
-                    try {
-                        // Trích xuất key cũ từ URL tạm (Presigned URL client upload lên)
-                        String sourceKey = extractKeyFromUrl(att.getFileUrl());
-
-                        // Tạo key mới cho thư mục chính thức: attachments/{roomId}/{uuid}-{fileName}
-                        String fileExtension = att.getFileName().contains(".")
-                                ? att.getFileName().substring(att.getFileName().lastIndexOf(".")) : "";
-                        String destKey = "attachments/" + roomId + "/" + UUID.randomUUID() + fileExtension;
-
-                        // Thực hiện copy file trên S3 từ temp sang official
-                        copyS3ObjectWithRetry(sourceKey, destKey, 3);
-
-                        // Tạo URL chính thức (S3 Static URL)
-                        String finalUrl = String.format("https://%s.s3.%s.amazonaws.com/%s",
-                                bucketName, region, destKey);
-
-                        finalAttachments.add(Attachment.builder()
-                                .fileName(att.getFileName())
-                                .contentType(att.getContentType())
-                                .fileSize(att.getFileSize())
-                                .fileUrl(finalUrl)
-                                .build());
-                    } catch (Exception e) {
-                        log.error("Lỗi khi copy file đính kèm: {}", att.getFileName(), e);
-                        // Có thể chọn quăng lỗi hoặc tiếp tục tùy business
-                    }
+                    // Khởi tạo Object Attachment chính thức mang URL mới để lưu vào Message & gửi Socket nhanh
+                    finalAttachments.add(Attachment.builder()
+                            .fileName(att.getFileName())
+                            .contentType(att.getContentType())
+                            .fileSize(att.getFileSize())
+                            .fileUrl(finalUrl)
+                            .build());
                 }
             }
 
@@ -166,7 +153,17 @@ public class ChatDomainServiceImpl implements ChatDomainService {
             eventPublisher.publishEvent(
                     new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE)
             );
-
+            if (!rawAttachments.isEmpty()) {
+                eventPublisher.publishEvent(AttachmentSaveEvent.builder()
+                        .roomId(roomId)
+                        .messageId(part) // 'part' chính là ID tin nhắn dạng timestamp#uuid của bạn
+                        .senderId(senderId)
+                        .createdAt(now)
+                        .rawAttachments(rawAttachments)   // Truyền list chứa URL tạm (để bóc sourceKey)
+                        .finalAttachments(finalAttachments) // Truyền list chứa URL chính thức (để bóc destKey)
+                        .isForwarded(isForwarded)
+                        .build());
+            }
             return messageResponse; // Chứa id thực tế của message đã lưu
         } catch (AppException e) {
             throw e;
@@ -249,55 +246,5 @@ public class ChatDomainServiceImpl implements ChatDomainService {
         eventPublisher.publishEvent(new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE));
 
         return response;
-    }
-
-    /**
-     * Hàm hỗ trợ cắt URL để lấy S3 Key chuẩn.
-     * Loại bỏ toàn bộ phần Domain và các tham số phía sau.
-     */
-    private String extractKeyFromUrl(String url) {
-        if (url == null || url.isEmpty()) return "";
-        try {
-            // Giải mã URL (biến %20 thành khoảng trắng, v.v.)
-            String decodedUrl = java.net.URLDecoder.decode(url, "UTF-8");
-
-            int index = decodedUrl.indexOf("temp-drafts");
-            if (index == -1) return decodedUrl;
-
-            String key = decodedUrl.substring(index);
-            // Loại bỏ phần query string phía sau dấu ? nếu có
-            if (key.contains("?")) {
-                key = key.split("\\?")[0];
-            }
-            return key;
-        } catch (Exception e) {
-            log.error("Lỗi trích xuất S3 Key từ URL: {}", url);
-            return url;
-        }
-    }
-
-    /**
-     * Hàm Copy S3 có cơ chế đợi và thử lại (Retry)
-     */
-    private void copyS3ObjectWithRetry(String sourceKey, String destKey, int maxRetries) throws Exception {
-        int attempts = 0;
-        while (attempts < maxRetries) {
-            try {
-                s3Client.copyObject(CopyObjectRequest.builder()
-                        .sourceBucket(bucketName)
-                        .sourceKey(sourceKey)
-                        .destinationBucket(bucketName)
-                        .destinationKey(destKey)
-                        .build());
-                return; // Thành công thì thoát
-            } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
-                attempts++;
-                if (attempts >= maxRetries) throw e;
-
-                log.warn("S3 Key chưa sẵn sàng (404), đang thử lại lần {}... Key: {}", attempts, sourceKey);
-                // Đợi 500ms để S3 kịp index file vừa upload
-                Thread.sleep(500);
-            }
-        }
     }
 }
