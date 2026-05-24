@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class InboxUpdateEvent {
+public class MemberInboxUpdateEvent {
     private String roomId;
     private String senderId;
     private MessageResponse message;

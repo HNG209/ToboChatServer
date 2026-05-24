@@ -1,36 +1,30 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.RoomMember;
-import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
 import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
-import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
-import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -166,7 +160,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             // async upsert + socket
             eventPublisher.publishEvent(
-                    new InboxUpdateEvent(roomId, senderId, messageResponse)
+                    new MemberInboxUpdateEvent(roomId, senderId, messageResponse)
             );
 
             eventPublisher.publishEvent(
@@ -214,7 +208,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 .sendEvent("receive_message", messageResponse);
 
         eventPublisher.publishEvent(
-                new InboxUpdateEvent(roomId, actorId, messageResponse)
+                new MemberInboxUpdateEvent(roomId, actorId, messageResponse)
         );
     }
 
@@ -251,7 +245,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
         socketIOServer.getRoomOperations("room:" + roomId)
                 .sendEvent("receive_message", response);
 
-        eventPublisher.publishEvent(new InboxUpdateEvent(roomId, senderId, response));
+        eventPublisher.publishEvent(new MemberInboxUpdateEvent(roomId, senderId, response));
         eventPublisher.publishEvent(new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE));
 
         return response;

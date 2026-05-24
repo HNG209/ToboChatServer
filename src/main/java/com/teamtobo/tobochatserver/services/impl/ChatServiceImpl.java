@@ -2,13 +2,13 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
-import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UserInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
-import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
@@ -18,7 +18,6 @@ import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
-import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -533,7 +532,7 @@ public class ChatServiceImpl implements ChatService {
                     }
 
                     // xử lý message hợp lệ đầu tiên
-                    return mapToResponse(msg, userId);
+                    return buildMessageResponse(msg);
                 }
 
                 lastEvaluatedKey = page.lastEvaluatedKey();
@@ -629,12 +628,15 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public MessageResponse buildMessageResponse(Message message) {
+        boolean isRevoked = message.getMessageStatus() == MessageStatus.REVOKED;
+
         return MessageResponse.builder()
                 .id(message.getSk().replace("MSG#", ""))
+                .content(isRevoked ? null : message.getContent())
+                .attachments(isRevoked ? null : message.getAttachments())
                 .messageStatus(message.getMessageStatus())
                 .roomId(message.getPk().replace("ROOM#", ""))
                 .action(message.getAction())
-                .attachments(message.getAttachments())
                 .createdAt(message.getCreatedAt())
                 .replyTo(MessageResponse.builder().id(message.getReplyTo()).build())
                 .metadata(message.getMetadata())
@@ -712,7 +714,7 @@ public class ChatServiceImpl implements ChatService {
             if(!Objects.equals(latestMessage.getId(), messageId)) return;
 
             eventPublisher.publishEvent(
-                    new InboxUpdateEvent(roomId, userId, buildMessageResponse(message))
+                    new MemberInboxUpdateEvent(roomId, userId, buildMessageResponse(message))
             );
         } catch (RuntimeException e) {
             log.error("Lỗi nghiệp vụ revoke message: {}", e.getMessage());
@@ -802,6 +804,12 @@ public class ChatServiceImpl implements ChatService {
                             .roomId(roomId)
                             .build());
 
+            MessageResponse latestMessage = getRoomLatestMessage(roomId);
+            // Chỉ cập nhật inbox khi xoá tin nhắn mới nhất
+            if (!Objects.equals(messageId, latestMessage.getId())) return;
+
+            //  Cập nhật cho chính tôi, người khác ko bị ảnh hưởng
+            eventPublisher.publishEvent(new UserInboxUpdateEvent(userId, roomId));
         } catch (Exception e) {
             throw new RuntimeException("Không thể xoá tin nhắn", e);
         }
