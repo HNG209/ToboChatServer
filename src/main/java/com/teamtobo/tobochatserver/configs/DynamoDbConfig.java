@@ -1,6 +1,7 @@
 package com.teamtobo.tobochatserver.configs;
 
 import com.teamtobo.tobochatserver.entities.*;
+import com.teamtobo.tobochatserver.entities.documents.AttachmentItem;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,7 +15,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 public class DynamoDbConfig {
     @Value("${aws.dynamodb.tableName:ToboChatTable}")
     private String tableName;
-
+    private String attachmentTableName = "Attachment";
     @Bean
     public DynamoDbClient dynamoDbClient() {
         // Tự động lấy credential trong máy (.aws/credentials) hoặc biến môi trường
@@ -74,5 +75,9 @@ public class DynamoDbConfig {
     @Bean
     public DynamoDbTable<GroupPendingRequest> groupPendingRequestTable(DynamoDbEnhancedClient enhancedClient) {
         return enhancedClient.table(tableName, TableSchema.fromBean(GroupPendingRequest.class));
+    }
+    @Bean
+    public DynamoDbTable<AttachmentItem> attachmentItemTable(DynamoDbEnhancedClient enhancedClient) {
+        return enhancedClient.table(attachmentTableName, TableSchema.fromBean(AttachmentItem.class));
     }
 }
