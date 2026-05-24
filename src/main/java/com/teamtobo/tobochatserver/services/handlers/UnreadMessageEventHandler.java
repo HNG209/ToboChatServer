@@ -1,6 +1,5 @@
 package com.teamtobo.tobochatserver.services.handlers;
 
-import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import lombok.RequiredArgsConstructor;

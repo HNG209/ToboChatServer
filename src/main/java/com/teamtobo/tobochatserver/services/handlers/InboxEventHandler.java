@@ -1,9 +1,12 @@
 package com.teamtobo.tobochatserver.services.handlers;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.events.InboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UserInboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
+import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
@@ -21,7 +24,7 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class InboxEventHandler {
-
+    private final ChatService chatService;
     private final RoomService roomService;
     private final UserService userService;
     private final RoomMemberService roomMemberService;
@@ -29,7 +32,7 @@ public class InboxEventHandler {
 
     @Async
     @EventListener
-    public void handleInboxUpdate(InboxUpdateEvent event) {
+    public void handleMemberInboxUpdate(MemberInboxUpdateEvent event) { // Update cho tất cả thành viên trong nhóm
         try {
             List<String> memberIds =
                     roomService.getMembersByRoomId(event.getRoomId());
@@ -39,6 +42,9 @@ public class InboxEventHandler {
             memberIds.parallelStream().forEach(memberId -> {
                 try {
                     InboxStatus inboxStatus = InboxStatus.ACTIVE;
+
+                    // Nếu cho phép bỏ qua cập nhật sender
+                    if(event.isIgnoreSender() && event.getSenderId().equals(memberId)) return;
 
                     if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
                         FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
@@ -55,7 +61,7 @@ public class InboxEventHandler {
 
                     socketIOServer.getRoomOperations(memberId)
                             .sendEvent("inbox_updated", Map.of(
-                                    "message", event.getMessage(),
+                                    "message", chatService.buildLatestMessage(event.getMessage()),
                                     "inboxStatus", inboxStatus
                             ));
 
@@ -63,6 +69,37 @@ public class InboxEventHandler {
                     log.error("Lỗi cập nhật inbox cho member {} trong room {}: {}", memberId, event.getRoomId(), e.getMessage());
                 }
             });
+        } catch (Exception e) {
+            log.error("Inbox update failed for room {}", event.getRoomId(), e);
+        }
+    }
+
+    @Async
+    @EventListener
+    public void handleUserInboxUpdate(UserInboxUpdateEvent event) { // Update cho 1 người dùng cụ thể
+        try {
+            String now = Instant.now().toString();
+            String userId = event.getUserId();
+            String roomId = event.getRoomId();
+
+            InboxStatus inboxStatus = InboxStatus.ACTIVE;
+
+            // Tự động tính toán lại latestMessage
+            MessageResponse latestMessage = chatService.getLatestMessage(userId, roomId);
+
+            roomMemberService.upsertMemberInbox(
+                    roomId,
+                    userId,
+                    inboxStatus,
+                    now,
+                    latestMessage
+            );
+
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("inbox_updated", Map.of(
+                            "message", latestMessage,
+                            "inboxStatus", inboxStatus
+                    ));
         } catch (Exception e) {
             log.error("Inbox update failed for room {}", event.getRoomId(), e);
         }
