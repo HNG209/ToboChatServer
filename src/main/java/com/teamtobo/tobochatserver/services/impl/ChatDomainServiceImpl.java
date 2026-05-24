@@ -160,7 +160,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
 
             // async upsert + socket
             eventPublisher.publishEvent(
-                    new MemberInboxUpdateEvent(roomId, senderId, messageResponse)
+                    new MemberInboxUpdateEvent(roomId, senderId, messageResponse, false)
             );
 
             eventPublisher.publishEvent(
@@ -208,7 +208,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                 .sendEvent("receive_message", messageResponse);
 
         eventPublisher.publishEvent(
-                new MemberInboxUpdateEvent(roomId, actorId, messageResponse)
+                new MemberInboxUpdateEvent(roomId, actorId, messageResponse, false)
         );
     }
 
@@ -245,7 +245,7 @@ public class ChatDomainServiceImpl implements ChatDomainService {
         socketIOServer.getRoomOperations("room:" + roomId)
                 .sendEvent("receive_message", response);
 
-        eventPublisher.publishEvent(new MemberInboxUpdateEvent(roomId, senderId, response));
+        eventPublisher.publishEvent(new MemberInboxUpdateEvent(roomId, senderId, response, false));
         eventPublisher.publishEvent(new UnreadMessageUpdateEvent(senderId, roomId, UnreadUpdateType.UPDATE));
 
         return response;

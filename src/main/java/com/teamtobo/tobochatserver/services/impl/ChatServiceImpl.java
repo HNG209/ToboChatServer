@@ -708,13 +708,18 @@ public class ChatServiceImpl implements ChatService {
                                     "roomId", roomId
                             ));
 
-            MessageResponse latestMessage = getRoomLatestMessage(roomId);
+            MessageResponse roomLatestMessage = getRoomLatestMessage(roomId);
+            MessageResponse myLatestMessage = getLatestMessage(userId, roomId);
 
-            // Nếu không phải là tin nhắn mới nhất thì không cập nhật inbox
-            if(!Objects.equals(latestMessage.getId(), messageId)) return;
+            // Nếu là tin nhắn mới nhất dưới góc nhìn của người dùng hiện tại thì cập nhật lại inbox
+            if (Objects.equals(messageId, myLatestMessage.getId()))
+                eventPublisher.publishEvent(new UserInboxUpdateEvent(userId, roomId));
+
+            // Nếu không phải là tin nhắn mới nhất của nhóm thì không cập nhật inbox cho các thành viên
+            if(!Objects.equals(roomLatestMessage.getId(), messageId)) return;
 
             eventPublisher.publishEvent(
-                    new MemberInboxUpdateEvent(roomId, userId, buildMessageResponse(message))
+                    new MemberInboxUpdateEvent(roomId, userId, buildMessageResponse(message), true)
             );
         } catch (RuntimeException e) {
             log.error("Lỗi nghiệp vụ revoke message: {}", e.getMessage());
@@ -773,11 +778,9 @@ public class ChatServiceImpl implements ChatService {
                     .sortValue(sk)
                     .build();
 
-            // 1. Get item
             Message message = messageTable.getItem(r -> r.key(key));
             if (message == null) return;
 
-            // 2. Lấy list hiện tại
             List<String> deletedList = message.getDeletedByUserIds();
 
             if (deletedList == null) {
@@ -786,26 +789,22 @@ public class ChatServiceImpl implements ChatService {
                 deletedList = new ArrayList<>(deletedList); // clone
             }
 
-            // 3. Add nếu chưa có
-            if (!deletedList.contains(userId)) {
-                deletedList.add(userId);
-            } else {
-                return;
-            }
+            if (deletedList.contains(userId)) return;
+            deletedList.add(userId);
 
-            // Set lại vào chính object đã get
+            // Lấy trước tin nhắn mới nhất lúc chưa cập nhật
+            MessageResponse latestMessage = getLatestMessage(userId, roomId);
+
             message.setDeletedByUserIds(deletedList);
             messageTable.updateItem(message);
 
-            // emit socket
             socketIOServer.getRoomOperations(userId)
                     .sendEvent("delete_message", MessageResponse.builder()
                             .id(messageId)
                             .roomId(roomId)
                             .build());
 
-            MessageResponse latestMessage = getRoomLatestMessage(roomId);
-            // Chỉ cập nhật inbox khi xoá tin nhắn mới nhất
+            // Chỉ cập nhật inbox khi xoá tin nhắn mới nhất (dưới góc nhìn của người dùng hiện tại)
             if (!Objects.equals(messageId, latestMessage.getId())) return;
 
             //  Cập nhật cho chính tôi, người khác ko bị ảnh hưởng

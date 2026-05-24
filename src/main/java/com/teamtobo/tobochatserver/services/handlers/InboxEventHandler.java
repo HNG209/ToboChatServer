@@ -43,6 +43,9 @@ public class InboxEventHandler {
                 try {
                     InboxStatus inboxStatus = InboxStatus.ACTIVE;
 
+                    // Nếu cho phép bỏ qua cập nhật sender
+                    if(event.isIgnoreSender() && event.getSenderId().equals(memberId)) return;
+
                     if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
                         FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
                         inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
