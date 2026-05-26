@@ -118,13 +118,19 @@ public class SocketIOController {
             if (callSessionManager.markAsAnswered(roomId, userId)) {
                 log.info("Phòng [{}] đã có người bắt máy: {}", roomId, userId);
 
-                // Chỉ gửi lệnh tắt popup khi người này THỰC SỰ MỚI bắt máy lần đầu
+                // Sinh Token cho người vừa bắt máy
+                User user = userService.getUserById(userId);
+                String token = callService.generateCallToken(roomId, user.getName(), userId);
+
+                // Gửi Token về cho thiết bị vừa bấm (dùng call_joined hoặc sự kiện mới)
+                client.sendEvent("call_joined", new CallResponse(token, roomId, data.getIsVideoCall()));
+
+                // Gửi lệnh tắt popup đổ chuông trên các thiết bị khác (iPad, Web...) của user này
                 if (userId != null) {
                     server.getRoomOperations(userId).sendEvent("call_accepted", data);
                 }
             } else {
-                // Bỏ qua nếu FE gửi sự kiện accept_call lần thứ 2, thứ 3...
-                log.warn("User [{}] đã bắt máy phòng [{}] trước đó rồi, bỏ qua sự kiện trùng lặp", userId, roomId);
+                log.warn("User [{}] đã bắt máy phòng [{}] trước đó rồi", userId, roomId);
             }
         });
 

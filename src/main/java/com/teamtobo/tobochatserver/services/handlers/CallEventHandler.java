@@ -23,7 +23,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CallEventHandler {
     private final RoomMemberService roomMemberService;
-    private final CallService callService;
     private final SocketIOServer socketIOServer;
 
     @Async
@@ -40,10 +39,9 @@ public class CallEventHandler {
 
                 if (memberId.equals(callerId)) continue;
 
-                String receiverToken = callService.generateCallToken(roomId, member.getMember().getName(), memberId);
                 socketIOServer.getRoomOperations(memberId)
                         .sendEvent("incoming_call",
-                                new IcomingCallDto(callerId, receiverToken, roomMemberService.getRoomMetadata(memberId, roomId), event.getIsVideoCall()));
+                                new IcomingCallDto(callerId, null, roomMemberService.getRoomMetadata(memberId, roomId), event.getIsVideoCall()));
 
                 log.info("Đã gửi thông báo cuộc gọi đến User [{}]", memberId);
             }
