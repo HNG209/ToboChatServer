@@ -1,7 +1,8 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.response.AttachmentItemResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.entities.documents.AttachmentItem;
+import com.teamtobo.tobochatserver.entities.AttachmentItem;
 import com.teamtobo.tobochatserver.services.AttachmentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +27,7 @@ public class AttachmentServiceImpl implements AttachmentService {
     private final DynamoDbTable<AttachmentItem> attachmentItemTable;
 
     @Override
-    public PageResponse<AttachmentItem> getRoomAttachments(String roomId, String type, int limit, String cursor) {
+    public PageResponse<AttachmentItemResponse> getRoomAttachments(String roomId, String type, int limit, String cursor) {
         try {
             String partitionValue = "ROOM#" + roomId;
             String sortKeyPrefix = "ATTACHMENT#" + type + "#";
@@ -57,25 +58,34 @@ public class AttachmentServiceImpl implements AttachmentService {
                     .orElse(null);
 
             if (page == null || page.items().isEmpty()) {
-                return PageResponse.<AttachmentItem>builder().items(List.of()).nextCursor(null).build();
+                return PageResponse.<AttachmentItemResponse>builder().items(List.of()).nextCursor(null).build();
             }
 
-            List<AttachmentItem> items = page.items().stream().collect(Collectors.toList());
+            List<AttachmentItemResponse> items = page.items().stream()
+                    .map(item -> AttachmentItemResponse.builder()
+                            .attachmentId(item.getAttachmentId())
+                            .messageId(item.getMessageId())
+                            .senderId(item.getSenderId())
+                            .detail(item.getDetail())
+                            .build())
+                    .collect(Collectors.toList());
 
             String nextCursor = null;
             if (page.lastEvaluatedKey() != null && !page.lastEvaluatedKey().isEmpty()) {
-                nextCursor = page.lastEvaluatedKey().get("sortKey").s();
+                if (page.lastEvaluatedKey().containsKey("sk")) {
+                    nextCursor = page.lastEvaluatedKey().get("sk").s();
+                }
             }
 
             // Sử dụng chính xác PageResponse tổng của bạn
-            return PageResponse.<AttachmentItem>builder()
+            return PageResponse.<AttachmentItemResponse>builder()
                     .items(items)
                     .nextCursor(nextCursor)
                     .build();
 
         } catch (Exception e) {
             log.error("Lỗi xảy ra khi truy vấn tệp tin phòng {}: {}", roomId, e.getMessage(), e);
-            return PageResponse.<AttachmentItem>builder().items(List.of()).nextCursor(null).build();
+            return PageResponse.<AttachmentItemResponse>builder().items(List.of()).nextCursor(null).build();
         }
     }
 }

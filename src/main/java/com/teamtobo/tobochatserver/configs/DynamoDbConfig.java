@@ -1,7 +1,7 @@
 package com.teamtobo.tobochatserver.configs;
 
 import com.teamtobo.tobochatserver.entities.*;
-import com.teamtobo.tobochatserver.entities.documents.AttachmentItem;
+import com.teamtobo.tobochatserver.entities.AttachmentItem;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

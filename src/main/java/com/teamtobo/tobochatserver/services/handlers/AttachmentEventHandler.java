@@ -2,17 +2,20 @@ package com.teamtobo.tobochatserver.services.handlers;
 
 import com.teamtobo.tobochatserver.dtos.events.AttachmentSaveEvent;
 import com.teamtobo.tobochatserver.entities.documents.Attachment;
-import com.teamtobo.tobochatserver.entities.documents.AttachmentItem;
+import com.teamtobo.tobochatserver.entities.AttachmentItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.model.WriteBatch;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,7 +26,7 @@ public class AttachmentEventHandler {
 
     private final DynamoDbTable<AttachmentItem> attachmentItemTable;
     private final S3Client s3Client;
-
+    private final DynamoDbEnhancedClient dynamoDbEnhancedClient;
     @Value("${aws.s3.bucketName}")
     private String bucketName;
 
@@ -34,7 +37,7 @@ public class AttachmentEventHandler {
         try {
             List<Attachment> rawList = event.getRawAttachments();
             List<Attachment> finalList = event.getFinalAttachments();
-
+            List<AttachmentItem> itemsToBatchWrite = new ArrayList<>();
             for (int i = 0; i < finalList.size(); i++) {
                 Attachment finalAtt = finalList.get(i);
 
@@ -54,18 +57,32 @@ public class AttachmentEventHandler {
 
                 // 2. Tạo bản ghi độc lập cho từng Attachment (Lưu 2 bản)
                 String attachmentUuid = UUID.randomUUID().toString(); // Khóa chống trùng đè dữ liệu
-
+                String targetType = "FILE";
+                if (finalAtt.getContentType() != null &&
+                        (finalAtt.getContentType().startsWith("image/") || finalAtt.getContentType().startsWith("video/"))) {
+                    targetType = "MEDIA";
+                }
                 AttachmentItem item = AttachmentItem.builder()
-                        .roomId(event.getRoomId())
-                        .attachmentId(attachmentUuid)
+                        .pk("ROOM#" + event.getRoomId())
+                        .sk("ATTACHMENT#" + targetType + "#" + event.getCreatedAt() + "#" + attachmentUuid)
                         .messageId(event.getMessageId())
+                        .attachmentId(attachmentUuid)
                         .senderId(event.getSenderId())
                         .createdAt(event.getCreatedAt())
                         .detail(finalAtt)
                         .build();
 
                 // Lưu xuống DynamoDB bảng mới
-                attachmentItemTable.putItem(item);
+                itemsToBatchWrite.add(item);
+            }
+            if (!itemsToBatchWrite.isEmpty()) {
+                WriteBatch.Builder<AttachmentItem> writeBatchBuilder = WriteBatch.builder(AttachmentItem.class)
+                        .mappedTableResource(attachmentItemTable);
+
+                itemsToBatchWrite.forEach(writeBatchBuilder::addPutItem);
+
+                dynamoDbEnhancedClient.batchWriteItem(b -> b.addWriteBatch(writeBatchBuilder.build()));
+                log.info("Hoàn thành BATCH WRITE thành công {} file cho phòng {}", itemsToBatchWrite.size(), event.getRoomId());
             }
             log.info("Hoàn thành phân tách và lưu {} file thành công cho phòng {}", finalList.size(), event.getRoomId());
         } catch (Exception e) {
