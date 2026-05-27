@@ -84,6 +84,7 @@ public class SocketIOController {
             String roomId = data.getRoomId();
             Boolean isVideoCall = data.getIsVideoCall();
 
+            // Chặn người dùng gọi từ các thiết bị khác vào phòng nếu phòng đang có cuộc gọi
             if (callSessionManager.isCallActive(roomId)) {
                 log.warn("User [{}] cố gắng bắt đầu cuộc gọi mới nhưng phòng [{}] đang có cuộc gọi", callerId, roomId);
                 client.sendEvent("call_error", "Phòng này đang có cuộc gọi diễn ra.");
@@ -97,17 +98,19 @@ public class SocketIOController {
 
             // Tạo Token cho người gọi và trả về ngay để họ vào phòng LiveKit
             String callerToken = callService.generateCallToken(roomId, caller.getName(), callerId);
+            client.sendEvent("call_joined", new CallResponse(callerToken, roomId, isVideoCall));
 
-            client.sendEvent("call_started", new CallResponse(callerToken, roomId, isVideoCall));
-
+            // Update trạng thái cuộc gọi ngay lập tức cho các thiết bị khác của người gọi
             server.getRoomOperations(callerId).sendEvent("call_status_updated",
                     Map.of("roomId", roomId,
                             "status", CallStatus.IN_CALL));
 
             int totalMembers = (room != null) ? room.getMemberCount() : 2;
 
+            // Khởi tạo trạng thái phiên gọi
             callSessionManager.initCall(roomId, callerId, totalMembers, isVideoCall);
 
+            // Gửi sự kiện đổ chuông ở máy người khác
             eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken, isVideoCall));
         });
 
@@ -115,6 +118,7 @@ public class SocketIOController {
             String userId = client.get("userId");
             String roomId = data.getRoomId();
 
+            // Kểm tra người dùng bắt máy chưa, chỉ được bắt máy trên 1 thiết bị tại 1 thời điểm
             if (callSessionManager.markAsAnswered(roomId, userId)) {
                 log.info("Phòng [{}] đã có người bắt máy: {}", roomId, userId);
 
