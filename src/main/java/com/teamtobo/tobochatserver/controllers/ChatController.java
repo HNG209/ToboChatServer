@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
 import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
+import com.teamtobo.tobochatserver.dtos.request.PollCreateRequest;
 import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
 import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
 import com.teamtobo.tobochatserver.dtos.response.*;
@@ -10,6 +11,7 @@ import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.services.ChatService;
+import com.teamtobo.tobochatserver.services.PollService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ import java.util.Map;
 public class ChatController {
     private final ChatService chatService;
     private final ChatDomainService chatDomainService;
+    private final PollService pollService;
 
     @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
     @GetMapping("/rooms/{roomId}/messages")
@@ -152,6 +155,33 @@ public class ChatController {
         String userId = jwt.getSubject();
 
         chatService.deleteMessage(messageId, roomId, userId);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Tạo poll")
+    @PostMapping("/rooms/{roomId}/polls")
+    public ResponseEntity<Void> createPoll(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @RequestBody PollCreateRequest request) throws Exception {
+        String userId = jwt.getSubject();
+
+        pollService.createPoll(userId, roomId, request);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Vote poll")
+    @PatchMapping("/rooms/{roomId}/polls/{pollId}")
+    public ResponseEntity<Void> votePoll(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @PathVariable String pollId,
+            @RequestParam String optionId) throws Exception {
+        String userId = jwt.getSubject();
+
+        pollService.votePoll(roomId, pollId, optionId, userId);
 
         return ResponseEntity.noContent().build();
     }
