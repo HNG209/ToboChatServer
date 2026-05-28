@@ -24,6 +24,7 @@ import java.util.Map;
 public class CallEventHandler {
     private final RoomMemberService roomMemberService;
     private final SocketIOServer socketIOServer;
+    private final CallSessionManager callSessionManager;
 
     @Async
     @EventListener
@@ -38,6 +39,11 @@ public class CallEventHandler {
                 String memberId = member.getId();
 
                 if (memberId.equals(callerId)) continue;
+
+                // Không đổ chuông nếu người dùng đang trong cuộc gọi khác
+                if (callSessionManager.isUserInAnyCall(memberId)) {
+                    continue;
+                }
 
                 socketIOServer.getRoomOperations(memberId)
                         .sendEvent("incoming_call",

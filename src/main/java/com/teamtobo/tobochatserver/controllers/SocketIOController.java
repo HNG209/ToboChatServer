@@ -18,6 +18,7 @@ import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.services.handlers.CallSessionManager;
+import com.teamtobo.tobochatserver.utils.Helper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -93,6 +94,18 @@ public class SocketIOController {
 
             User caller = userService.getUserById(callerId);
             Room room = roomService.getRoomById(roomId, false);
+            int totalMembers = (room != null) ? room.getMemberCount() : 2;
+
+            if (Helper.isDMRoom(roomId)) { // Phòng cá nhân
+                String otherId = Helper.getOtherId(callerId, roomId);
+
+                // Chặn người dùng đang gọi tham gia trước nếu người kia đang trong cuộc gọi khác
+                if (callSessionManager.isUserInAnyCall(otherId)) {
+                    server.getRoomOperations(callerId)
+                            .sendEvent("call_error", "Người dùng [" + otherId + "] hiện đang trong cuộc gọi khác");
+                    return;
+                }
+            }
 
             log.info("User [{}] đang gọi vào phòng [{}], cuộc gọi video: {}", caller.getName(), roomId, isVideoCall);
 
@@ -104,8 +117,6 @@ public class SocketIOController {
             server.getRoomOperations(callerId).sendEvent("call_status_updated",
                     Map.of("roomId", roomId,
                             "status", CallStatus.IN_CALL));
-
-            int totalMembers = (room != null) ? room.getMemberCount() : 2;
 
             // Khởi tạo trạng thái phiên gọi
             callSessionManager.initCall(roomId, callerId, totalMembers, isVideoCall);
