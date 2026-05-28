@@ -113,10 +113,6 @@ public class ContactServiceImpl implements ContactService {
             return FriendStatus.SELF;
         }
         String statusStr = userNodeRepository.getFriendStatus(userId, otherId);
-
-        if (statusStr == null) {
-            return FriendStatus.STRANGER;
-        }
         return FriendStatus.valueOf(statusStr);
     }
 

@@ -7,6 +7,7 @@ import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.entities.Friend;
 import com.teamtobo.tobochatserver.entities.FriendRequest;
 import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
+import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserDomainService;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class FriendRequestController {
     private final UserService userService;
+    private final ContactService contactService;
     private final UserDomainService userDomainService;
 
     @Operation(summary = "Gửi lời mời kết bạn")
@@ -32,7 +34,7 @@ public class FriendRequestController {
             @PathVariable String otherId) {
         String userId = jwt.getSubject(); // sender
 
-        userService.sendFriendRequest(userId, otherId);
+        contactService.sendFriendRequest(userId, otherId);
         return ResponseEntity.noContent().build();
     }
 
@@ -43,7 +45,7 @@ public class FriendRequestController {
             @PathVariable String otherId) {
         String userId = jwt.getSubject();
 
-        userService.cancelFriendRequest(userId, otherId);
+        contactService.cancelFriendRequest(userId, otherId);
         return ResponseEntity.noContent().build();
     }
 
@@ -55,7 +57,7 @@ public class FriendRequestController {
             @PathVariable String otherId) {
         String userId = jwt.getSubject(); // receiver
 
-        userDomainService.responseFriendRequest(userId, FriendAcceptRequest.builder()
+        contactService.responseFriendRequest(userId, FriendAcceptRequest.builder()
                 .accepted(accepted)
                 .fromUser(otherId)
                 .build());
@@ -72,7 +74,7 @@ public class FriendRequestController {
     ) {
 
         return ApiResponse.<PageResponse<FriendRequestResponse>>builder()
-                .result(userService.getFriendRequests(
+                .result(contactService.getFriendRequests(
                         type,
                         jwt.getSubject(),
                         cursor,
@@ -81,14 +83,14 @@ public class FriendRequestController {
                 .build();
     }
 
-    @Operation(summary = "Đọc thông báo lời mời kết bạn")
-    @PatchMapping("/read")
-    public ApiResponse<Void> markReadFriendRequest (@AuthenticationPrincipal Jwt jwt) {
-        String userId = jwt.getSubject();
-        userService.markReadFriendRequest(userId);
-        return ApiResponse.<Void>builder()
-                .message("Đã xóa badge thông báo kết bạn")
-                .build();
-    }
+//    @Operation(summary = "Đọc thông báo lời mời kết bạn")
+//    @PatchMapping("/read")
+//    public ApiResponse<Void> markReadFriendRequest (@AuthenticationPrincipal Jwt jwt) {
+//        String userId = jwt.getSubject();
+//        userService.markReadFriendRequest(userId);
+//        return ApiResponse.<Void>builder()
+//                .message("Đã xóa badge thông báo kết bạn")
+//                .build();
+//    }
 
 }
