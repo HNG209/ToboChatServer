@@ -3,8 +3,9 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
 import com.teamtobo.tobochatserver.annotations.RoomId;
 import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
+import com.teamtobo.tobochatserver.dtos.response.AttachmentItemResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.entities.documents.AttachmentItem;
+import com.teamtobo.tobochatserver.entities.AttachmentItem;
 import com.teamtobo.tobochatserver.entities.enums.AttachmentType;
 import com.teamtobo.tobochatserver.services.AttachmentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,13 +25,13 @@ public class RoomAttachmentController {
     @Operation(summary = "Lấy danh sách media hoặc file của phòng chat")
     @GetMapping("/rooms/{roomId}/attachments")
     @RequireRoomMember
-    public ApiResponse<PageResponse<AttachmentItem>> getRoomAttachments(
+    public ApiResponse<PageResponse<AttachmentItemResponse>> getRoomAttachments(
             @RoomId @PathVariable String roomId,
             @Parameter @RequestParam AttachmentType type,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(required = false) String cursor
     ) {
-        return ApiResponse.<PageResponse<AttachmentItem>>builder()
+        return ApiResponse.<PageResponse<AttachmentItemResponse>>builder()
                 .result(attachmentService.getRoomAttachments(roomId, type.name(), limit, cursor))
                 .build();
     }
