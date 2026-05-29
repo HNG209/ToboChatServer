@@ -17,9 +17,9 @@ public class UnreadGroupRequestEventHandler {
     @Async
     @EventListener
     public void handleUnreadGroupRequestUpdate(UnreadGroupRequestUpdateEvent event) {
-        switch (event.getType()) {
-            case RESET -> userService.markReadGroupRequest(event.getUserId());
-            case UPDATE -> userService.increaseGroupRequestCount(event.getUserId());
-        }
+//        switch (event.getType()) {
+//            case RESET -> userService.markReadGroupRequest(event.getUserId());
+//            case UPDATE -> userService.increaseGroupRequestCount(event.getUserId());
+//        }
     }
 }
