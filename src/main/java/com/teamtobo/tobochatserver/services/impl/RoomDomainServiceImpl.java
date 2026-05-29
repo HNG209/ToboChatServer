@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadGroupRequestUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
@@ -839,6 +840,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
 
+        if (page == 0) {
+            eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            log.info("Bắn event RESET group badge thành công cho user: {}", userId);
+        }
+
         List<RoomNodeRepository.AcceptRequestData> requestDataList = roomNodeRepository.findAcceptRequestsByUserId(userId, pageable);
 
         boolean hasNext = requestDataList.size() > limit;
@@ -915,6 +921,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
+        eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(targetUserId, UnreadUpdateType.UPDATE));
+        log.info("Bắn event Update group badge thành công cho user: {}", targetUserId);
     }
 
     // Tạo lời mời chờ duyệt

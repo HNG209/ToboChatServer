@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.events.RoomCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadFriendRequestUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
 import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
@@ -105,6 +106,7 @@ public class ContactServiceImpl implements ContactService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
         userNodeRepository.createFriendRequest(userId, otherId);
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, UnreadUpdateType.UPDATE));
     }
 
     @Override
@@ -125,6 +127,11 @@ public class ContactServiceImpl implements ContactService {
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
+
+        if (type == FriendRequestType.PENDING && page == 0) {
+            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            log.info("Bắn event RESET badge cho user: {}", userId);
+        }
 
         List<UserNode> requestNodes;
         if (type == FriendRequestType.SENT) {
