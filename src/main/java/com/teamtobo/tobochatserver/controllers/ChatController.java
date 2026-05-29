@@ -197,10 +197,10 @@ public class ChatController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
             @PathVariable String pollId,
-            @RequestParam String optionId) throws Exception {
+            @RequestBody VotePollRequest request) throws Exception {
         String userId = jwt.getSubject();
 
-        pollService.votePoll(roomId, pollId, optionId, userId);
+        pollService.votePoll(roomId, pollId, request.getOptionIds(), userId);
 
         return ResponseEntity.noContent().build();
     }

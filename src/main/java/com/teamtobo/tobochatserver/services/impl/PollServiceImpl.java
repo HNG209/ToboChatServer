@@ -120,7 +120,7 @@ public class PollServiceImpl implements PollService {
     }
 
     @Override
-    public MessageResponse votePoll(String roomId, String pollId, String optionId, String userId) throws Exception {
+    public MessageResponse votePoll(String roomId, String pollId, List<String> optionIds, String userId) throws Exception {
         Key key = Key.builder().partitionValue("ROOM#" + roomId).sortValue("MSG#" + pollId).build();
         Message pollMessage = messageTable.getItem(key);
 
@@ -131,47 +131,42 @@ public class PollServiceImpl implements PollService {
         String pollDataJson = pollMessage.getMetadata().get("pollData");
         PollData pollData = objectMapper.readValue(pollDataJson, PollData.class);
 
-        boolean isMultipleChoice = pollData.isMultipleChoice();
-        boolean hasVotedForThisOption = false;
+        boolean hasChanges = false;
 
         for (PollData.PollOption option : pollData.getOptions()) {
-            // Nếu đây là phương án user vừa bấm
-            if (option.getId().equals(optionId)) {
-                if (option.getVotedUserIds().contains(userId)) {
-                    // Nếu đã vote rồi -> Hủy vote (Toggle Off)
-                    option.getVotedUserIds().remove(userId);
-                } else {
-                    // Nếu chưa vote -> Thêm vào (Toggle On)
-                    option.getVotedUserIds().add(userId);
-                    hasVotedForThisOption = true;
-                }
+            boolean shouldBeSelected = optionIds.contains(option.getId()); // FE bảo là có chọn ko?
+            boolean isCurrentlySelected = option.getVotedUserIds().contains(userId); // Hiện tại DB đang ghi là gì?
 
+            // NẾU FE bẩu chọn MÀ DB chưa có -> Thêm vào
+            if (shouldBeSelected && !isCurrentlySelected) {
+                option.getVotedUserIds().add(userId);
                 syncRecentVoters(option);
-            } else {
-                // Nếu không cho phép chọn nhiều, phải xóa vote của user ở CÁC phương án khác
-                if (!isMultipleChoice) {
-                    if (option.getVotedUserIds().remove(userId)) {
-                        syncRecentVoters(option);
-                    }
-                }
+                hasChanges = true;
+            }
+            // NẾU FE bẩu KHÔNG chọn MÀ DB đang có -> Xóa ra
+            else if (!shouldBeSelected && isCurrentlySelected) {
+                option.getVotedUserIds().remove(userId);
+                syncRecentVoters(option);
+                hasChanges = true;
             }
         }
 
-        String updatedPollDataJson = objectMapper.writeValueAsString(pollData);
-        pollMessage.getMetadata().put("pollData", updatedPollDataJson);
-        messageTable.putItem(pollMessage);
+        // Nếu có thay đổi thì mới lưu và bắn socket
+        if (hasChanges) {
+            String updatedPollDataJson = objectMapper.writeValueAsString(pollData);
+            pollMessage.getMetadata().put("pollData", updatedPollDataJson);
+            messageTable.putItem(pollMessage);
 
-        MessageResponse response = chatService.buildMessageResponse(pollMessage);
+            MessageResponse response = chatService.buildMessageResponse(pollMessage);
+            socketIOServer.getRoomOperations("room:" + roomId).sendEvent("poll_updated", response);
 
-        socketIOServer.getRoomOperations("room:" + roomId).sendEvent("poll_updated", response);
+            // chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("pollId", pollId));
 
-        if (hasVotedForThisOption) {
-             chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("pollId", pollId));
+            return response;
         }
 
-        return response;
+        return chatService.buildMessageResponse(pollMessage);
     }
-
     private void syncRecentVoters(PollData.PollOption option) {
         List<String> voters = option.getVotedUserIds();
         List<PollData.RecentVoter> recentList = new ArrayList<>();
