@@ -717,4 +717,42 @@ public class UserServiceImpl implements UserService {
                 .build());
     }
 
+    @Override
+    public void increaseGroupRequestCount(String userId) {
+        this.updateGroupRequestCount(userId, 1);
+        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_update", 1);
+        log.info("send unread group request");
+    }
+
+    @Override
+    public void markReadGroupRequest(String userId) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                        .tableName("ToboChatTable")
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                                "sk", AttributeValue.builder().s("PROFILE").build()
+                        ))
+                        .updateExpression("SET groupRequestCount = :zero")
+                        .expressionAttributeValues(Map.of(
+                                ":zero", AttributeValue.builder().n("0").build()
+                        ))
+                .build());
+        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_reset", 1);
+    }
+
+    private void updateGroupRequestCount(String userId, int amount) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                        .tableName("ToboChatTable")
+                        .key(Map.of(
+                                "pk", AttributeValue.builder().s("USER#" + userId).build(),
+                                "sk", AttributeValue.builder().s("PROFILE").build()
+                        ))
+                        .updateExpression("SET groupRequestCount = if_not_exists(groupRequestCount, :zero) + :inc")
+                        .expressionAttributeValues(Map.of(
+                                ":inc", AttributeValue.builder().n(String.valueOf(amount)).build(),
+                                ":zero", AttributeValue.builder().n("0").build()
+                        ))
+                .build());
+    }
+
 }

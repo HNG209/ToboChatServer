@@ -38,5 +38,7 @@ public interface UserService {
     PresignedUploadResponse getAvatarUploadUrl(String fileName, String name);
     void increaseFriendRequestCount(String userId);
     void markReadFriendRequest(String userId);
+    void increaseGroupRequestCount(String userId);
+    void markReadGroupRequest(String userId);
 
 }

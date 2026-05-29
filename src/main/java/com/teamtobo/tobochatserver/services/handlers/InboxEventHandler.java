@@ -6,10 +6,7 @@ import com.teamtobo.tobochatserver.dtos.events.UserInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
-import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
-import com.teamtobo.tobochatserver.services.RoomService;
-import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.services.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -26,7 +23,7 @@ import java.util.Map;
 public class InboxEventHandler {
     private final ChatService chatService;
     private final RoomService roomService;
-    private final UserService userService;
+    private final ContactService contactService;
     private final RoomMemberService roomMemberService;
     private final SocketIOServer socketIOServer;
 
@@ -47,7 +44,7 @@ public class InboxEventHandler {
                     if(event.isIgnoreSender() && event.getSenderId().equals(memberId)) return;
 
                     if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
-                        FriendStatus friendStatus = userService.getFriendStatus(event.getSenderId(), memberId);
+                        FriendStatus friendStatus = contactService.getFriendStatus(event.getSenderId(), memberId);
                         inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
                     }
 

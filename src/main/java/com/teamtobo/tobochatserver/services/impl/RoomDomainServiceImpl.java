@@ -47,6 +47,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final RoomService roomService;
     private final RoomMemberService roomMemberService;
     private final ChatService chatService;
+    private final ContactService contactService;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -418,7 +419,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .orElseThrow();
 
         // check friend
-        FriendStatus friendStatus = userService.getFriendStatus(userId, otherId);
+        FriendStatus friendStatus = contactService.getFriendStatus(userId, otherId);
 
         InboxStatus senderStatus = InboxStatus.ACTIVE;
         InboxStatus receiverStatus =
@@ -722,7 +723,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void validateFriend(String inviterId, String targetUserId) {
-        if (userService.getFriendStatus(inviterId, targetUserId) != FriendStatus.FRIEND) {
+        if (contactService.getFriendStatus(inviterId, targetUserId) != FriendStatus.FRIEND) {
             throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
         }
     }
