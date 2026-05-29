@@ -3,7 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teamtobo.tobochatserver.dtos.PollData;
-import com.teamtobo.tobochatserver.dtos.request.PollCreateRequest;
+import com.teamtobo.tobochatserver.dtos.request.PollSubmitRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -29,14 +29,12 @@ public class PollServiceImpl implements PollService {
     private final SocketIOServer socketIOServer;
 
     @Override
-    public MessageResponse createPoll(String senderId, String roomId, PollCreateRequest request) throws Exception {
-
-        // 1. Map từ Request sang PollData nội bộ
+    public MessageResponse createPoll(String senderId, String roomId, PollSubmitRequest request) throws Exception {
         List<PollData.PollOption> initialOptions = new ArrayList<>();
         for (int i = 0; i < request.getOptions().size(); i++) {
             initialOptions.add(PollData.PollOption.builder()
                     .id("opt_" + i)
-                    .text(request.getOptions().get(i))
+                    .text(request.getOptions().get(i).getText())
                     .build());
         }
 
@@ -58,35 +56,55 @@ public class PollServiceImpl implements PollService {
     }
 
     @Override
-    public MessageResponse addOptionToPoll(String roomId, String pollSk, String newOptionText, String userId) throws Exception {
-        Key key = Key.builder().partitionValue("ROOM#" + roomId).sortValue(pollSk).build();
+    public MessageResponse updatePoll(String roomId, String pollId, PollSubmitRequest request, String userId) throws Exception {
+        Key key = Key.builder().partitionValue("ROOM#" + roomId).sortValue("MSG#" + pollId).build();
         Message pollMessage = messageTable.getItem(key);
 
         if (pollMessage == null || pollMessage.getMetadata() == null) {
             throw new AppException(ErrorCode.MESSAGE_NOT_FOUND);
         }
 
-        String pollDataJson = pollMessage.getMetadata().get("pollData");
-        PollData pollData = objectMapper.readValue(pollDataJson, PollData.class);
+        // Tùy chọn: thêm logic check quyền tại đây (VD: userId có phải là pollMessage.getSenderId() không)
 
-        // Kiểm tra quyền thêm phương án (nếu bạn có cấu hình allowAddOption)
-        if (!pollData.isAllowAddOption()) {
-            throw new RuntimeException("Cuộc bình chọn này không cho phép thêm phương án mới");
+        String pollDataJson = pollMessage.getMetadata().get("pollData");
+        PollData oldPollData = objectMapper.readValue(pollDataJson, PollData.class);
+
+        List<PollData.PollOption> newOptions = new ArrayList<>();
+
+        for (PollSubmitRequest.PollOptionDto reqOption : request.getOptions()) {
+            if (reqOption.getId() != null && !reqOption.getId().trim().isEmpty()) {
+                // Nếu là option cũ, tìm option cũ trong DB để copy lại danh sách người đã vote
+                PollData.PollOption existingOption = oldPollData.getOptions().stream()
+                        .filter(o -> o.getId().equals(reqOption.getId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (existingOption != null) {
+                    newOptions.add(PollData.PollOption.builder()
+                            .id(existingOption.getId())
+                            .text(reqOption.getText()) // Cập nhật text phòng trường hợp user sửa lỗi chính tả
+                            .votedUserIds(existingOption.getVotedUserIds()) // Giữ nguyên lượt vote
+                            .build());
+                }
+            } else {
+                // NẾU LÀ OPTION MỚI (Không có ID): Tạo ID mới và danh sách vote rỗng
+                String newOptionId = "opt_" + UUID.randomUUID().toString().substring(0, 8);
+                newOptions.add(PollData.PollOption.builder()
+                        .id(newOptionId)
+                        .text(reqOption.getText())
+                        .votedUserIds(new ArrayList<>())
+                        .build());
+            }
         }
 
-        // Tạo phương án mới
-        String newOptionId = "opt_" + UUID.randomUUID().toString().substring(0, 8);
-        PollData.PollOption newOption = PollData.PollOption.builder()
-                .id(newOptionId)
-                .text(newOptionText)
-                .build();
+        oldPollData.setQuestion(request.getQuestion());
+        oldPollData.setOptions(newOptions); // Danh sách option đã được phân loại ở trên
+        oldPollData.setMultipleChoice(request.isMultipleChoice());
+        oldPollData.setAllowAddOption(request.isAllowAddOption());
+        oldPollData.setDeadline(request.getDeadline());
 
-        pollData.getOptions().add(newOption);
-
-        // Chuyển Object về lại JSON và cập nhật Message
-        String updatedPollDataJson = objectMapper.writeValueAsString(pollData);
+        String updatedPollDataJson = objectMapper.writeValueAsString(oldPollData);
         pollMessage.getMetadata().put("pollData", updatedPollDataJson);
-
         messageTable.putItem(pollMessage);
 
         MessageResponse response = chatService.buildMessageResponse(pollMessage);

@@ -2,12 +2,8 @@ package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
 import com.teamtobo.tobochatserver.annotations.RoomId;
-import com.teamtobo.tobochatserver.dtos.request.ForwardRequest;
-import com.teamtobo.tobochatserver.dtos.request.PollCreateRequest;
-import com.teamtobo.tobochatserver.dtos.request.RevokeMessageRequest;
-import com.teamtobo.tobochatserver.dtos.request.SendMessageRequest;
+import com.teamtobo.tobochatserver.dtos.request.*;
 import com.teamtobo.tobochatserver.dtos.response.*;
-import com.teamtobo.tobochatserver.entities.enums.MessageType;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.services.ChatService;
@@ -19,9 +15,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
 
 @Tag(name = "Chat Controller", description = "APIs quản lý chat")
 @RestController
@@ -164,10 +157,24 @@ public class ChatController {
     public ResponseEntity<Void> createPoll(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable String roomId,
-            @RequestBody PollCreateRequest request) throws Exception {
+            @RequestBody PollSubmitRequest request) throws Exception {
         String userId = jwt.getSubject();
 
         pollService.createPoll(userId, roomId, request);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Chỉnh sửa poll")
+    @PutMapping("/rooms/{roomId}/polls/{pollId}")
+    public ResponseEntity<Void> updatePoll(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String roomId,
+            @RequestBody PollSubmitRequest request,
+            @PathVariable String pollId) throws Exception {
+        String userId = jwt.getSubject();
+
+        pollService.updatePoll(roomId, pollId, request, userId);
 
         return ResponseEntity.noContent().build();
     }
