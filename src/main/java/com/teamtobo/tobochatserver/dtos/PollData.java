@@ -29,5 +29,17 @@ public class PollData {
 
         @Builder.Default
         private List<String> votedUserIds = new ArrayList<>(); // Danh sách user đã vote
+
+        @Builder.Default
+        private List<RecentVoter> recentVoters = new ArrayList<>();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RecentVoter {
+        private String id;
+        private String avatar;
     }
 }

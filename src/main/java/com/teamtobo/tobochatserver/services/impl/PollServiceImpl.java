@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teamtobo.tobochatserver.dtos.PollData;
 import com.teamtobo.tobochatserver.dtos.request.PollSubmitRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
+import com.teamtobo.tobochatserver.dtos.response.UserResponse;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -12,6 +13,7 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.PollService;
+import com.teamtobo.tobochatserver.services.UserService;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -25,6 +27,7 @@ public class PollServiceImpl implements PollService {
     private final DynamoDbTable<Message> messageTable;
     private final ChatDomainService chatDomainService;
     private final ChatService chatService;
+    private final UserService userService;
     private final ObjectMapper objectMapper;
 
     private final SocketIOServer socketIOServer;
@@ -142,10 +145,14 @@ public class PollServiceImpl implements PollService {
                     option.getVotedUserIds().add(userId);
                     hasVotedForThisOption = true;
                 }
+
+                syncRecentVoters(option);
             } else {
                 // Nếu không cho phép chọn nhiều, phải xóa vote của user ở CÁC phương án khác
                 if (!isMultipleChoice) {
-                    option.getVotedUserIds().remove(userId);
+                    if (option.getVotedUserIds().remove(userId)) {
+                        syncRecentVoters(option);
+                    }
                 }
             }
         }
@@ -163,5 +170,37 @@ public class PollServiceImpl implements PollService {
         }
 
         return response;
+    }
+
+    private void syncRecentVoters(PollData.PollOption option) {
+        List<String> voters = option.getVotedUserIds();
+        List<PollData.RecentVoter> recentList = new ArrayList<>();
+
+        if (voters == null || voters.isEmpty()) {
+            option.setRecentVoters(recentList);
+            return;
+        }
+
+        List<String> idsToFetch = new ArrayList<>();
+        int size = voters.size();
+
+        idsToFetch.add(voters.get(size - 1)); // Người mới nhất luôn nằm ở cuối mảng
+        if (size >= 2) {
+            idsToFetch.add(voters.get(size - 2)); // Người mới thứ hai
+        }
+
+        Map<String, UserResponse> userResponseMap = userService.getUsersMapByIds(idsToFetch);
+
+        for (String vId : idsToFetch) {
+            UserResponse profile = (userResponseMap != null) ? userResponseMap.get(vId) : null;
+            String avatarUrl = (profile != null) ? profile.getAvatarUrl() : null;
+
+            recentList.add(PollData.RecentVoter.builder()
+                    .id(vId)
+                    .avatar(avatarUrl)
+                    .build());
+        }
+
+        option.setRecentVoters(recentList);
     }
 }
