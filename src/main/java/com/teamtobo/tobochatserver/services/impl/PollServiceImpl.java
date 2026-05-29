@@ -6,6 +6,7 @@ import com.teamtobo.tobochatserver.dtos.PollData;
 import com.teamtobo.tobochatserver.dtos.request.PollSubmitRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.entities.Message;
+import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
@@ -110,6 +111,8 @@ public class PollServiceImpl implements PollService {
         MessageResponse response = chatService.buildMessageResponse(pollMessage);
         socketIOServer.getRoomOperations("room:" + roomId).sendEvent("poll_updated", response);
 
+        chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_UPDATED, Map.of("pollId", pollId));
+
         return response;
     }
 
@@ -153,11 +156,10 @@ public class PollServiceImpl implements PollService {
 
         MessageResponse response = chatService.buildMessageResponse(pollMessage);
 
-        // Phát Event Socket báo hiệu Poll đã thay đổi dữ liệu
         socketIOServer.getRoomOperations("room:" + roomId).sendEvent("poll_updated", response);
 
         if (hasVotedForThisOption) {
-            // chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("targetPollSk", pollSk));
+             chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("pollId", pollId));
         }
 
         return response;
