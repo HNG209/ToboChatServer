@@ -93,11 +93,18 @@ public class ChatServiceImpl implements ChatService {
     public MessageResponse getMessage(String messageId, String roomId) {
         Message message = getMessageById(messageId, roomId);
 
+        if (message == null) throw new AppException(ErrorCode.MESSAGE_NOT_FOUND);
+
         return MessageResponse.builder()
+                .id(messageId)
                 .content(message.getContent())
                 .attachments(message.getAttachments())
                 .createdAt(message.getCreatedAt())
                 .messageStatus(message.getMessageStatus())
+                .action(message.getAction())
+                .roomId(roomId)
+                .messageType(message.getMessageType())
+                .metadata(message.getMetadata())
                 .roomId(roomId)
                 .build();
     }
@@ -270,6 +277,7 @@ public class ChatServiceImpl implements ChatService {
 
                     return MessageResponse.builder()
                             .id(messageId)
+                            .roomId(roomId)
                             // Tin nhắn đã thu hồi ko cần trả về content và replyTo
                             .content(isRevoked ? null : msg.getContent())
                             .replyTo(!isRevoked ? repliedMessageResponse : null)

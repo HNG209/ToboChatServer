@@ -42,6 +42,18 @@ public class ChatController {
                 .build();
     }
 
+    @Operation(summary = "Lấy 1 tin nhắn cụ thể")
+    @GetMapping("/rooms/{roomId}/messages/{messageId}")
+    @RequireRoomMember
+    public ApiResponse<MessageResponse> getMessage(
+            @RoomId @PathVariable String roomId,
+            @PathVariable String messageId) {
+
+        return ApiResponse.<MessageResponse>builder()
+                .result(chatService.getMessage(messageId, roomId))
+                .build();
+    }
+
     @Operation(summary = "Gửi message")
     @PostMapping("/rooms/{roomId}/messages")
     @RequireRoomMember
