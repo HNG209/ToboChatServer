@@ -106,7 +106,7 @@ public class ContactServiceImpl implements ContactService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
         userNodeRepository.createFriendRequest(userId, otherId);
-        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, UnreadUpdateType.UPDATE));
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, userId, UnreadUpdateType.UPDATE));
     }
 
     @Override
@@ -129,7 +129,7 @@ public class ContactServiceImpl implements ContactService {
         Pageable pageable = PageRequest.of(page, limit);
 
         if (type == FriendRequestType.PENDING && page == 0) {
-            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
             log.info("Bắn event RESET badge cho user: {}", userId);
         }
 

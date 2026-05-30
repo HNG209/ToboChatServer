@@ -49,6 +49,7 @@ public class UserServiceImpl implements UserService {
     private final DynamoDbTable<Friend> friendTable;
     private final DynamoDbTable<FriendRequest> friendRequestTable;
     private final CognitoIdentityProviderClient cognitoClient;
+    private final RoomService roomService;
 
     private final S3Helper s3Helper;
     private final CognitoHelper cognitoHelper;
@@ -216,7 +217,7 @@ public class UserServiceImpl implements UserService {
                 .sk("REQUEST#" + otherId)
                 .build();
 
-        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, UnreadUpdateType.UPDATE));
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, userId, UnreadUpdateType.UPDATE));
 
         friendRequestTable.putItem(friendRequest);
     }
@@ -523,7 +524,7 @@ public class UserServiceImpl implements UserService {
 
     private PageResponse<FriendRequestResponse> getPendingRequests(String userId, String cursor, int limit) {
         if (cursor == null || cursor.isEmpty()) {
-            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
             log.info("Bắn event RESET badge cho user: {}", userId);
         }
 
@@ -679,9 +680,16 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void increaseFriendRequestCount(String userId) {
+    public void increaseFriendRequestCount(String userId, String senderId) {
         this.updateFriendRequestCount(userId, 1);
-        socketIOServer.getRoomOperations(userId).sendEvent("friend_request_unread_update", 1);
+        UserResponse userResponse = getUserProfile(senderId);
+        FriendRequestResponse friendResponse = FriendRequestResponse.builder()
+                .id(senderId)
+                .name(userResponse.getName())
+                .avatarUrl(userResponse.getAvatarUrl())
+                .createdAt(userResponse.getCreatedAt())
+                .build();
+        socketIOServer.getRoomOperations(userId).sendEvent("friend_request_unread_update", friendResponse);
         log.info("send unread friend request");
     }
 
@@ -718,9 +726,24 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void increaseGroupRequestCount(String userId) {
+    public void increaseGroupRequestCount(String userId, String senderId, String roomId) {
         this.updateGroupRequestCount(userId, 1);
-        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_update", 1);
+        UserResponse userResponse = getUserProfile(senderId);
+        UserResponse cleanUserResponse = UserResponse.builder()
+                .id(userResponse.getId())
+                .name(userResponse.getName())
+                .email(userResponse.getEmail())
+                .avatarUrl(userResponse.getAvatarUrl())
+                .createdAt(userResponse.getCreatedAt())
+                .build();
+
+        Room room = roomService.getRoomById(roomId, false);
+        GroupPendingRequestResponse groupPendingRequestResponse = GroupPendingRequestResponse.builder()
+                .inviter(userResponse)
+                .roomId(room.getRoomId())
+                .roomName(room.getRoomName())
+                .build();
+        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_update", groupPendingRequestResponse);
         log.info("send unread group request");
     }
 

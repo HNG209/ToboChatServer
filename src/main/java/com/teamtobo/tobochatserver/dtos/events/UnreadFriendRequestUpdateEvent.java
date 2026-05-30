@@ -8,5 +8,6 @@ import lombok.Data;
 @AllArgsConstructor
 public class UnreadFriendRequestUpdateEvent {
     private String userId;
+    private String senderId;
     UnreadUpdateType type;
 }

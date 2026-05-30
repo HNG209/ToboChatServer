@@ -19,7 +19,7 @@ public class UnreadGroupRequestEventHandler {
     public void handleUnreadGroupRequestUpdate(UnreadGroupRequestUpdateEvent event) {
         switch (event.getType()) {
             case RESET -> userService.markReadGroupRequest(event.getUserId());
-            case UPDATE -> userService.increaseGroupRequestCount(event.getUserId());
+            case UPDATE -> userService.increaseGroupRequestCount(event.getUserId(), event.getSenderId(), event.getRoomId());
         }
     }
 }

@@ -841,7 +841,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         Pageable pageable = PageRequest.of(page, limit);
 
         if (page == 0) {
-            eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, UnreadUpdateType.RESET));
+            eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, null, null, UnreadUpdateType.RESET));
             log.info("Bắn event RESET group badge thành công cho user: {}", userId);
         }
 
@@ -921,7 +921,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
-        eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(targetUserId, UnreadUpdateType.UPDATE));
+        eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(targetUserId, inviterId, roomId, UnreadUpdateType.UPDATE));
         log.info("Bắn event Update group badge thành công cho user: {}", targetUserId);
     }
 
