@@ -1,15 +1,13 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.events.ForwardMessageEvent;
-import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.events.UnreadMessageUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.events.UserInboxUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.*;
 import com.teamtobo.tobochatserver.dtos.payloads.MessageReactionPayload;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.MessageReaction;
 import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
+import com.teamtobo.tobochatserver.entities.enums.MessageUpdateType;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.entities.enums.UnreadUpdateType;
 import com.teamtobo.tobochatserver.exception.AppException;
@@ -678,7 +676,14 @@ public class ChatServiceImpl implements ChatService {
 
             message.setMessageStatus(MessageStatus.REVOKED);
             messageTable.updateItem(message);
-
+            eventPublisher.publishEvent(
+                    new MessageUpdateEvent(
+                            roomId,
+                            messageId,
+                            userId,
+                            MessageUpdateType.REVOKED
+                    )
+            );
             socketIOServer.getRoomOperations("room:" + roomId)
                     .sendEvent("message_revoked",
                             Map.of(
@@ -775,7 +780,14 @@ public class ChatServiceImpl implements ChatService {
 
             message.setDeletedByUserIds(deletedList);
             messageTable.updateItem(message);
-
+            eventPublisher.publishEvent(
+                    new MessageUpdateEvent(
+                            roomId,
+                            messageId,
+                            userId,
+                            MessageUpdateType.DELETED_FOR_USER
+                    )
+            );
             socketIOServer.getRoomOperations(userId)
                     .sendEvent("delete_message", MessageResponse.builder()
                             .id(messageId)
