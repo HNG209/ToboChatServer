@@ -177,6 +177,18 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Generate nội dung poll bằng AI")
+    @PostMapping("/polls")
+    public ResponseEntity<Void> generatePoll(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody PollGenerateRequest request) {
+        String userId = jwt.getSubject();
+
+        pollService.generatePoll(userId, request);
+
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Chỉnh sửa poll")
     @PutMapping("/rooms/{roomId}/polls/{pollId}")
     public ResponseEntity<Void> updatePoll(

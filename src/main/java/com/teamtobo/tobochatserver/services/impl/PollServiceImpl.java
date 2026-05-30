@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.services.impl;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teamtobo.tobochatserver.dtos.PollData;
+import com.teamtobo.tobochatserver.dtos.request.PollGenerateRequest;
 import com.teamtobo.tobochatserver.dtos.request.PollSubmitRequest;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
@@ -10,16 +11,14 @@ import com.teamtobo.tobochatserver.entities.Message;
 import com.teamtobo.tobochatserver.entities.enums.SystemAction;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
-import com.teamtobo.tobochatserver.services.ChatDomainService;
-import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.PollService;
-import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.services.*;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @AllArgsConstructor
@@ -29,6 +28,7 @@ public class PollServiceImpl implements PollService {
     private final ChatService chatService;
     private final UserService userService;
     private final ObjectMapper objectMapper;
+    private final GeminiService geminiService;
 
     private final SocketIOServer socketIOServer;
 
@@ -57,6 +57,22 @@ public class PollServiceImpl implements PollService {
         metadata.put("pollData", pollDataJson); // Lưu toàn bộ data vào 1 key duy nhất
 
         return chatDomainService.sendWidgetMessage(roomId, senderId, metadata);
+    }
+
+    @Override
+    public void generatePoll(String userId, PollGenerateRequest request) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                Object aiResult = geminiService.generatePollJson(request.getPrompt());
+
+                socketIOServer.getRoomOperations(userId)
+                        .sendEvent("poll_generated", aiResult);
+
+            } catch (Exception e) {
+                socketIOServer.getRoomOperations(userId)
+                        .sendEvent("poll_generated_error", Map.of("message", "Lỗi gen AI"));
+            }
+        });
     }
 
     @Override
