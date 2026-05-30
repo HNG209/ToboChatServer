@@ -68,28 +68,29 @@ public class PollServiceImpl implements PollService {
             throw new AppException(ErrorCode.MESSAGE_NOT_FOUND);
         }
 
-        // Tùy chọn: thêm logic check quyền tại đây (VD: userId có phải là pollMessage.getSenderId() không)
-
         String pollDataJson = pollMessage.getMetadata().get("pollData");
         PollData oldPollData = objectMapper.readValue(pollDataJson, PollData.class);
+        boolean isCreator = userId.equals(pollMessage.getSenderId());
+        boolean canAddOption = oldPollData.isAllowAddOption();
+
+        if (!isCreator && !canAddOption)
+            throw new AppException(ErrorCode.INVALID_PERMISSION);
 
         List<PollData.PollOption> newOptions = new ArrayList<>();
 
         for (PollSubmitRequest.PollOptionDto reqOption : request.getOptions()) {
             if (reqOption.getId() != null && !reqOption.getId().trim().isEmpty()) {
                 // Nếu là option cũ, tìm option cũ trong DB để copy lại danh sách người đã vote
-                PollData.PollOption existingOption = oldPollData.getOptions().stream()
+                oldPollData.getOptions().stream()
                         .filter(o -> o.getId().equals(reqOption.getId()))
                         .findFirst()
-                        .orElse(null);
+                        .ifPresent(existingOption -> newOptions.add(PollData.PollOption.builder()
+                                .id(existingOption.getId())
+                                .text(reqOption.getText()) // Cập nhật text phòng trường hợp user sửa lỗi chính tả
+                                .votedUserIds(existingOption.getVotedUserIds()) // Giữ nguyên lượt vote
+                                .recentVoters(existingOption.getRecentVoters()) // Giữ nguyên danh sách đại diện
+                                .build()));
 
-                if (existingOption != null) {
-                    newOptions.add(PollData.PollOption.builder()
-                            .id(existingOption.getId())
-                            .text(reqOption.getText()) // Cập nhật text phòng trường hợp user sửa lỗi chính tả
-                            .votedUserIds(existingOption.getVotedUserIds()) // Giữ nguyên lượt vote
-                            .build());
-                }
             } else {
                 // NẾU LÀ OPTION MỚI (Không có ID): Tạo ID mới và danh sách vote rỗng
                 String newOptionId = "opt_" + UUID.randomUUID().toString().substring(0, 8);
@@ -103,9 +104,15 @@ public class PollServiceImpl implements PollService {
 
         oldPollData.setQuestion(request.getQuestion());
         oldPollData.setOptions(newOptions); // Danh sách option đã được phân loại ở trên
-        oldPollData.setMultipleChoice(request.isMultipleChoice());
-        oldPollData.setAllowAddOption(request.isAllowAddOption());
-        oldPollData.setDeadline(request.getDeadline());
+        oldPollData.setMultipleChoice(oldPollData.isMultipleChoice());
+        oldPollData.setAllowAddOption(oldPollData.isAllowAddOption());
+        oldPollData.setDeadline(oldPollData.getDeadline());
+
+        if (isCreator) { // Chỉ được chỉnh sửa những thuộc tính này nếu là người tạo
+            oldPollData.setMultipleChoice(request.isMultipleChoice());
+            oldPollData.setAllowAddOption(request.isAllowAddOption());
+            oldPollData.setDeadline(request.getDeadline());
+        }
 
         String updatedPollDataJson = objectMapper.writeValueAsString(oldPollData);
         pollMessage.getMetadata().put("pollData", updatedPollDataJson);
@@ -151,7 +158,6 @@ public class PollServiceImpl implements PollService {
             }
         }
 
-        // Nếu có thay đổi thì mới lưu và bắn socket
         if (hasChanges) {
             String updatedPollDataJson = objectMapper.writeValueAsString(pollData);
             pollMessage.getMetadata().put("pollData", updatedPollDataJson);
@@ -167,6 +173,7 @@ public class PollServiceImpl implements PollService {
 
         return chatService.buildMessageResponse(pollMessage);
     }
+
     private void syncRecentVoters(PollData.PollOption option) {
         List<String> voters = option.getVotedUserIds();
         List<PollData.RecentVoter> recentList = new ArrayList<>();

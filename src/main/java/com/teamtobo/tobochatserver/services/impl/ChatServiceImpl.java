@@ -97,6 +97,7 @@ public class ChatServiceImpl implements ChatService {
 
         return MessageResponse.builder()
                 .id(messageId)
+                .user(UserResponse.builder().id(message.getSenderId()).build())
                 .content(message.getContent())
                 .attachments(message.getAttachments())
                 .createdAt(message.getCreatedAt())
@@ -262,7 +263,8 @@ public class ChatServiceImpl implements ChatService {
                 .map(msg -> {
                     String messageId = msg.getSk().replace("MSG#", "");
                     boolean isRevoked = msg.getMessageStatus() == MessageStatus.REVOKED;
-                    UserResponse userResponse = userResponseMap.get(msg.getSenderId());
+                    UserResponse userResponse = userResponseMap
+                            .getOrDefault(msg.getSenderId(), UserResponse.builder().id(msg.getSenderId()).build());
 
                     Message repliedMessage = messageMap.getOrDefault(msg.getReplyTo(), null);
                     MessageResponse repliedMessageResponse = repliedMessage != null ? MessageResponse.builder()
