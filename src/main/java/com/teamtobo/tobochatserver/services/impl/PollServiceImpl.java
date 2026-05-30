@@ -63,7 +63,7 @@ public class PollServiceImpl implements PollService {
     public void generatePoll(String userId, PollGenerateRequest request) {
         CompletableFuture.runAsync(() -> {
             try {
-                Object aiResult = geminiService.generatePollJson(request.getPrompt());
+                Object aiResult = geminiService.generatePollJson(request.getPrompt(), request.getFileUrl());
 
                 socketIOServer.getRoomOperations(userId)
                         .sendEvent("poll_generated", aiResult);

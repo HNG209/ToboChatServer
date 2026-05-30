@@ -9,5 +9,6 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PollGenerateRequest {
-    String prompt;
+    String prompt; // prompt của người dùng
+    String fileUrl; // duy nhất 1 file nếu có
 }

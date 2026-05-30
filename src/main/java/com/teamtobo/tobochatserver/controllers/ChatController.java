@@ -8,6 +8,7 @@ import com.teamtobo.tobochatserver.entities.enums.ReactionType;
 import com.teamtobo.tobochatserver.services.ChatDomainService;
 import com.teamtobo.tobochatserver.services.ChatService;
 import com.teamtobo.tobochatserver.services.PollService;
+import com.teamtobo.tobochatserver.utils.S3Helper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -147,7 +148,6 @@ public class ChatController {
         return ApiResponse.<PresignedUrlResponse>builder()
                 .result(chatService.generateAttachmentPresignedUrl(fileName, roomId, contentType)).build();
     }
-
 
     @Operation(summary = "Xoá tin nhắn ở phía tôi")
     @DeleteMapping("/rooms/{roomId}/messages/{messageId}")

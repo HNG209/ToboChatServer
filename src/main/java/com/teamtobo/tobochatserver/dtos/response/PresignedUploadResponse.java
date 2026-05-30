@@ -11,5 +11,6 @@ import java.util.Map;
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PresignedUploadResponse {
+    String uploadUrl;
     String url;
 }
