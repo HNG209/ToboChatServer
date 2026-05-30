@@ -738,12 +738,12 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         Room room = roomService.getRoomById(roomId, false);
-        GroupPendingRequestResponse groupPendingRequestResponse = GroupPendingRequestResponse.builder()
-                .inviter(userResponse)
+        GroupAcceptRequestResponse groupAcceptRequestResponse = GroupAcceptRequestResponse.builder()
+                .inviter(cleanUserResponse)
                 .roomId(room.getRoomId())
                 .roomName(room.getRoomName())
                 .build();
-        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_update", groupPendingRequestResponse);
+        socketIOServer.getRoomOperations(userId).sendEvent("group_request_unread_update", groupAcceptRequestResponse);
         log.info("send unread group request");
     }
 
