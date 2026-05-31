@@ -6,8 +6,9 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class UnreadFriendRequestUpdateEvent {
+public class UnreadGroupRequestUpdateEvent {
     private String userId;
     private String senderId;
+    private String roomId;
     UnreadUpdateType type;
 }

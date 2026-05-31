@@ -36,7 +36,9 @@ public interface UserService {
     void disableMFA(String userId, String password);
 
     PresignedUploadResponse getAvatarUploadUrl(String fileName, String name);
-    void increaseFriendRequestCount(String userId);
+    void increaseFriendRequestCount(String userId, String senderId);
     void markReadFriendRequest(String userId);
+    void increaseGroupRequestCount(String userId, String senderId, String roomId);
+    void markReadGroupRequest(String userId);
 
 }

@@ -1,23 +1,28 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.events.RoomCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadFriendRequestUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.request.FriendAcceptRequest;
+import com.teamtobo.tobochatserver.dtos.request.RoomCreateRequest;
 import com.teamtobo.tobochatserver.dtos.response.FriendRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.FriendResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.UserResponse;
-import com.teamtobo.tobochatserver.entities.enums.FriendRequestType;
-import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
-import com.teamtobo.tobochatserver.entities.enums.MemberStatus;
+import com.teamtobo.tobochatserver.entities.enums.*;
 import com.teamtobo.tobochatserver.entities.nodes.UserNode;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
 import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.ContactService;
+import com.teamtobo.tobochatserver.services.RoomDomainService;
 import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.utils.Helper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -33,6 +38,7 @@ public class ContactServiceImpl implements ContactService {
     private final UserNodeRepository userNodeRepository;
     private final RoomNodeRepository roomNodeRepository;
     private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public PageResponse<FriendResponse> getFriends(String userId, String roomId, String nextCursor, int limit) {
@@ -100,6 +106,7 @@ public class ContactServiceImpl implements ContactService {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
         userNodeRepository.createFriendRequest(userId, otherId);
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, userId, UnreadUpdateType.UPDATE));
     }
 
     @Override
@@ -113,10 +120,6 @@ public class ContactServiceImpl implements ContactService {
             return FriendStatus.SELF;
         }
         String statusStr = userNodeRepository.getFriendStatus(userId, otherId);
-
-        if (statusStr == null) {
-            return FriendStatus.STRANGER;
-        }
         return FriendStatus.valueOf(statusStr);
     }
 
@@ -124,6 +127,11 @@ public class ContactServiceImpl implements ContactService {
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
+
+        if (type == FriendRequestType.PENDING && page == 0) {
+            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
+            log.info("Bắn event RESET badge cho user: {}", userId);
+        }
 
         List<UserNode> requestNodes;
         if (type == FriendRequestType.SENT) {
@@ -166,6 +174,24 @@ public class ContactServiceImpl implements ContactService {
         if (!request.isAccepted()) return;
 
         userNodeRepository.createFriend(senderId, userId);
+
+        eventPublisher.publishEvent(
+                new RoomCreateEvent(userId,
+                        RoomCreateRequest.builder()
+                        .memberIds(List.of(userId, request.getFromUser()))
+                        .build(),
+                        RoomType.DM)
+        );
+        log.info("Đã khởi tạo thành công Room DM lưu bên DynamoDB cho {} và {}", userId, senderId);
+        // Tạo tin nhắn hệ thống
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        Helper.createDeterministicId(userId, request.getFromUser()),
+                        userId,
+                        SystemAction.FRIEND_ACCEPTED,
+                        null
+                )
+        );
     }
 
     @Override

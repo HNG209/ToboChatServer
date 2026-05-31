@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
+import com.teamtobo.tobochatserver.dtos.events.UnreadGroupRequestUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
@@ -47,6 +48,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     private final RoomService roomService;
     private final RoomMemberService roomMemberService;
     private final ChatService chatService;
+    private final ContactService contactService;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -418,7 +420,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .orElseThrow();
 
         // check friend
-        FriendStatus friendStatus = userService.getFriendStatus(userId, otherId);
+        FriendStatus friendStatus = contactService.getFriendStatus(userId, otherId);
 
         InboxStatus senderStatus = InboxStatus.ACTIVE;
         InboxStatus receiverStatus =
@@ -722,7 +724,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     }
 
     private void validateFriend(String inviterId, String targetUserId) {
-        if (userService.getFriendStatus(inviterId, targetUserId) != FriendStatus.FRIEND) {
+        if (contactService.getFriendStatus(inviterId, targetUserId) != FriendStatus.FRIEND) {
             throw new AppException(ErrorCode.ONLY_FRIEND_CAN_ADD);
         }
     }
@@ -838,6 +840,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
 
+        if (page == 0) {
+            eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, null, null, UnreadUpdateType.RESET));
+            log.info("Bắn event RESET group badge thành công cho user: {}", userId);
+        }
+
         List<RoomNodeRepository.AcceptRequestData> requestDataList = roomNodeRepository.findAcceptRequestsByUserId(userId, pageable);
 
         boolean hasNext = requestDataList.size() > limit;
@@ -914,6 +921,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
+        eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(targetUserId, inviterId, roomId, UnreadUpdateType.UPDATE));
+        log.info("Bắn event Update group badge thành công cho user: {}", targetUserId);
     }
 
     // Tạo lời mời chờ duyệt

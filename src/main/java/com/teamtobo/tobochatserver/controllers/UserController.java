@@ -64,7 +64,7 @@ public class UserController {
         String userId = jwt.getSubject();
 
         return ApiResponse.<FriendStatus>builder()
-                .result(userService.getFriendStatus(userId, otherId))
+                .result(contactService.getFriendStatus(userId, otherId))
                 .build();
     }
 

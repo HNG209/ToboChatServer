@@ -21,7 +21,7 @@ public class UnreadFriendRequestEventHandler {
     public void handleUnreadFriendRequestUpdate(UnreadFriendRequestUpdateEvent event) {
         switch (event.getType()) {
             case RESET -> userService.markReadFriendRequest(event.getUserId());
-            case UPDATE -> userService.increaseFriendRequestCount(event.getUserId());
+            case UPDATE -> userService.increaseFriendRequestCount(event.getUserId(), event.getSenderId());
         }
     }
 }
