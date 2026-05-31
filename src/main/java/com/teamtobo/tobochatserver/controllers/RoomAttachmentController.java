@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Room Attachment Controller", description = "APIs quản lý kho lưu trữ tệp tin trong phòng chat")
@@ -27,12 +29,14 @@ public class RoomAttachmentController {
     @RequireRoomMember
     public ApiResponse<PageResponse<AttachmentItemResponse>> getRoomAttachments(
             @RoomId @PathVariable String roomId,
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter @RequestParam AttachmentType type,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(required = false) String cursor
     ) {
+        String userId = jwt.getSubject();
         return ApiResponse.<PageResponse<AttachmentItemResponse>>builder()
-                .result(attachmentService.getRoomAttachments(roomId, type.name(), limit, cursor))
+                .result(attachmentService.getRoomAttachments(userId,roomId, type.name(), limit, cursor))
                 .build();
     }
 }
