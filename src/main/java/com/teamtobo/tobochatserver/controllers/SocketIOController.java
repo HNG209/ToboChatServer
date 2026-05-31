@@ -12,10 +12,7 @@ import com.teamtobo.tobochatserver.entities.Room;
 import com.teamtobo.tobochatserver.entities.User;
 import com.teamtobo.tobochatserver.entities.enums.CallStatus;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
-import com.teamtobo.tobochatserver.services.CallService;
-import com.teamtobo.tobochatserver.services.RoomMemberService;
-import com.teamtobo.tobochatserver.services.RoomService;
-import com.teamtobo.tobochatserver.services.UserService;
+import com.teamtobo.tobochatserver.services.*;
 import com.teamtobo.tobochatserver.services.handlers.ActiveRoomManager;
 import com.teamtobo.tobochatserver.services.handlers.CallSessionManager;
 import com.teamtobo.tobochatserver.utils.Helper;
@@ -31,33 +28,22 @@ import java.util.Map;
 @Slf4j
 @Component
 public class SocketIOController {
-    private final UserService userService;
-    private final CallService callService;
-    private final RoomMemberService roomMemberService;
-    private final RoomService roomService;
     private final ActiveRoomManager activeRoomManager;
-    private final CallSessionManager callSessionManager;
     private final JwtDecoder jwtDecoder;
-    private final ApplicationEventPublisher eventPublisher;
-
+    private final UserPresenceService userPresenceService;
 
     public SocketIOController(SocketIOServer server,
                               UserService userService,
                               CallService callService,
-                              RoomMemberService roomMemberService,
                               RoomService roomService,
                               JwtDecoder jwtDecoder,
                               ActiveRoomManager activeRoomManager,
                               CallSessionManager callSessionManager,
-                              ApplicationEventPublisher eventPublisher) {
-        this.userService = userService;
-        this.callService = callService;
-        this.roomMemberService = roomMemberService;
-        this.roomService = roomService;
+                              ApplicationEventPublisher eventPublisher,
+                              UserPresenceService userPresenceService) {
         this.activeRoomManager = activeRoomManager;
         this.jwtDecoder = jwtDecoder;
-        this.callSessionManager = callSessionManager;
-        this.eventPublisher = eventPublisher;
+        this.userPresenceService = userPresenceService;
         server.addConnectListener(onConnected());
         server.addDisconnectListener(onDisconnected());
 
@@ -224,34 +210,57 @@ public class SocketIOController {
 
             eventPublisher.publishEvent(new WidgetMessageCreateEvent(roomId, originalCallerId, widgetMetadata));
         });
+
+        // User presence
+        server.addEventListener("client_heartbeat", Object.class, (client, data, ack) -> {
+            String userId = client.get("userId");
+            String deviceId = client.get("deviceId");
+
+            if (userId != null && deviceId != null) {
+                userPresenceService.receiveHeartbeat(userId, deviceId);
+            }
+        });
     }
 
     private ConnectListener onConnected() {
         return client -> {
             String token = client.getHandshakeData().getSingleUrlParam("token");
+            String deviceId = client.getHandshakeData().getSingleUrlParam("deviceId");
+
             if (token != null) {
                 Jwt jwt = jwtDecoder.decode(token);
                 String userId = jwt.getSubject();
 
                 client.joinRoom(userId);
                 client.set("userId", userId);
+                if (deviceId != null) {
+                    client.set("deviceId", deviceId);
+                    userPresenceService.receiveHeartbeat(userId, deviceId);
+                }
 
-                log.info("User [{}] đã online", userId);
+                log.info("User [{}] đã online với thiết bị [{}]", userId, deviceId);
             }
         };
     }
 
     private DisconnectListener onDisconnected() {
         return client -> {
-
             String userId = client.get("userId");
+            String deviceId = client.get("deviceId");
             String socketId = client.getSessionId().toString();
 
             if (userId != null) {
-
                 activeRoomManager.clearSocket(userId, socketId);
-
                 log.info("User [{}] socket [{}] disconnected", userId, socketId);
+
+                if (deviceId != null) {
+                    // Chủ động xóa key session trên Redis ngay lập tức
+                    boolean isFullyOffline = userPresenceService.forceOffline(userId, deviceId);
+
+                    if (isFullyOffline) {
+                        log.info("User [{}] đã hoàn toàn offline trên tất cả thiết bị", userId);
+                    }
+                }
             }
         };
     }
