@@ -24,7 +24,8 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/test/init",
             "/contacts/test/**",
-            "/migrator/**"
+            "/migrator/**",
+            "/ai/test/**"
     };
 
     @Bean

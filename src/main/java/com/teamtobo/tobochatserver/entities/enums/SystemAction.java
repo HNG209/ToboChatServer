@@ -10,5 +10,7 @@ public enum SystemAction {
     MEMBER_LEFT,       // Rời nhóm
     MEMBER_REMOVED,    // Kick thành viên
     ROOM_NAME_CHANGED, // Đổi tên nhóm
-    ROOM_AVATAR_CHANGED     // Đổi ảnh nhóm
+    ROOM_AVATAR_CHANGED,     // Đổi ảnh nhóm
+    POLL_UPDATED, // Cập nhật poll
+    POLL_VOTED, // Tham gia bình chọn
 }

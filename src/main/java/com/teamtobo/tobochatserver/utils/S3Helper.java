@@ -19,6 +19,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -27,43 +29,8 @@ import java.util.UUID;
 public class S3Helper {
     @Value("${aws.s3.bucketName}")
     private String bucketName;
-
-    private final S3Client s3Client;
-
     private final S3Presigner s3Presigner;
-    public String uploadFileToS3(String userId, MultipartFile file) {
-        // Đặt tên file: users/{userId}/{uuid}-{filename} để tránh trùng
-        String fileName = "users/" + userId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
 
-        try {
-            PutObjectRequest putOb = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .contentType(file.getContentType())
-                    .build();
-
-            // Upload lên S3
-            s3Client.putObject(putOb, RequestBody.fromBytes(file.getBytes()));
-
-            // Lấy URL trả về
-            return s3Client.utilities().getUrl(GetUrlRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .build()).toExternalForm();
-
-        } catch (IOException e) {
-            throw new AppException(ErrorCode.UPLOAD_ERROR);
-        }
-    }
-
-
-
-    /**
-     * Generate presigned upload URL for avatars (users and rooms)
-     * @param id user ID or room ID
-     * @param contentType image content type
-     * @param folder folder path (e.g., "avatars", "room-avatars")
-     */
     public PresignedUploadResponse generatePresignedUploadUrl(String id, String contentType, String folder) {
         // Validate Content-Type
         Set<String> allowedTypes = Set.of(
@@ -105,9 +72,6 @@ public class S3Helper {
                 .build();
     }
 
-    /**
-     * Overload method for user avatar - defaults to "avatars" folder
-     */
     public PresignedUploadResponse generatePresignedUploadUrl(String userId, String contentType) {
         return generatePresignedUploadUrl(userId, contentType, "avatars");
     }

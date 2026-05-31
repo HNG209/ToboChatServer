@@ -1,16 +1,15 @@
-package com.teamtobo.tobochatserver.dtos.response;
+package com.teamtobo.tobochatserver.dtos.request;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
-import java.util.Map;
+import java.util.List;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class PresignedUploadResponse {
-    String uploadUrl;
-    String url;
+public class VotePollRequest {
+    List<String> optionIds;
 }
