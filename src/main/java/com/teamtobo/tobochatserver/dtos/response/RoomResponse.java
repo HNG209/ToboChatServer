@@ -32,6 +32,8 @@ public class RoomResponse {
 
     String createdAt;
 
+    UserPresenceResponse userPresence;
+
     // Normalize id from pk
     public String getId() {
         return Helper.normalizeId(this.id);

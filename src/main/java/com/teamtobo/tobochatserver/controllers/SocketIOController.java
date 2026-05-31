@@ -255,11 +255,7 @@ public class SocketIOController {
 
                 if (deviceId != null) {
                     // Chủ động xóa key session trên Redis ngay lập tức
-                    boolean isFullyOffline = userPresenceService.forceOffline(userId, deviceId);
-
-                    if (isFullyOffline) {
-                        log.info("User [{}] đã hoàn toàn offline trên tất cả thiết bị", userId);
-                    }
+                    userPresenceService.forceOffline(userId, deviceId);
                 }
             }
         };

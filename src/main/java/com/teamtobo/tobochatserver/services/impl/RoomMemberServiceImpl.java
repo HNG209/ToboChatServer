@@ -9,6 +9,7 @@ import com.teamtobo.tobochatserver.entities.documents.LatestMessage;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberRole;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
+import com.teamtobo.tobochatserver.entities.enums.UserPresenceStatus;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.*;
@@ -39,7 +40,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
     private final DynamoDbTable<RoomMember> roomMemberTable;
     private final RoomService roomService;
     private final UserService userService;
-    private final ChatService chatService;
+    private final UserPresenceService userPresenceService;
     private final DynamoDbClient dynamoDbClient;
     private final ActiveRoomManager activeRoomManager;
     private final SocketIOServer socketIOServer;
@@ -361,12 +362,14 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             }
 
             UserResponse other = userService.getUserProfile(otherUserId);
+            UserPresenceResponse presenceResponse = userPresenceService.getUserPresenceStatus(otherUserId);
 
             return RoomResponse.builder()
                     .id(roomId)
                     .roomName(other.getName())
                     .avatarUrl(other.getAvatarUrl())
                     .roomType(RoomType.DM)
+                    .userPresence(presenceResponse) // trạng thái hoạt động của người dùng
                     .build();
         }
 
@@ -380,6 +383,10 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .allowAddMember(room.isAllowAddMember())
                 .approveMember(room.isApproveMember())
                 .memberCount(room.getMemberCount())
+                // Nhóm thì ko hiện trạng thái hoạt động
+                .userPresence(UserPresenceResponse.builder()
+                        .status(UserPresenceStatus.UNAVAILABLE)
+                        .build())
                 .build();
     }
 

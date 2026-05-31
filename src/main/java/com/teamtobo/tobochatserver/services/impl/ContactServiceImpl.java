@@ -16,10 +16,8 @@ import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.repositories.RoomNodeRepository;
 import com.teamtobo.tobochatserver.repositories.UserNodeRepository;
 import com.teamtobo.tobochatserver.services.ContactService;
-import com.teamtobo.tobochatserver.services.RoomDomainService;
 import com.teamtobo.tobochatserver.services.UserService;
 import com.teamtobo.tobochatserver.utils.Helper;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -86,6 +84,30 @@ public class ContactServiceImpl implements ContactService {
                             .memberStatus(memberStatusMap.getOrDefault(friend.getId(), null))
                             .build();
                 }).toList())
+                .nextCursor(hasNext ? String.valueOf(page + 1) : null)
+                .build();
+    }
+
+    // Lightweight của bản trên, dùng cho gửi socket
+    @Override
+    public PageResponse<String> getFriendIds(String userId, String nextCursor, int limit) {
+        int page = (nextCursor == null || nextCursor.isEmpty()) ? 0 : Integer.parseInt(nextCursor);
+        Pageable pageable = PageRequest.of(page, limit);
+
+        // Lấy danh sách bạn bè từ Neo4j
+        List<UserNode> friends = userNodeRepository.findAllFriends(userId, pageable);
+
+        boolean hasNext = friends.size() > pageable.getPageSize();
+        List<UserNode> currentFriends = hasNext ? friends.subList(0, limit) : friends;
+
+        if (currentFriends.isEmpty()) {
+            return PageResponse.<String>builder().items(List.of()).build();
+        }
+
+        List<String> userIds = currentFriends.stream().map(UserNode::getId).toList();
+
+        return PageResponse.<String>builder()
+                .items(userIds)
                 .nextCursor(hasNext ? String.valueOf(page + 1) : null)
                 .build();
     }

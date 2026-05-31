@@ -1,7 +1,11 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.teamtobo.tobochatserver.dtos.events.UserPresenceUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.response.UserPresenceResponse;
+import com.teamtobo.tobochatserver.entities.enums.UserPresenceStatus;
 import com.teamtobo.tobochatserver.services.UserPresenceService;
 import lombok.AllArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -16,6 +20,7 @@ public class UserPresenceServiceImpl implements UserPresenceService {
     private static final String USER_TRACKING_KEY_PATTERN = "sessions:user:%s";
     private static final String LAST_SEEN_KEY_PATTERN = "last_seen:user:%s";
     private static final long TIMEOUT_MILLISECONDS = 60000;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public void receiveHeartbeat(String userId, String deviceId) {
@@ -33,10 +38,13 @@ public class UserPresenceServiceImpl implements UserPresenceService {
 
         // Cập nhật Last Seen
         redisTemplate.opsForValue().set(String.format(LAST_SEEN_KEY_PATTERN, userId), String.valueOf(currentTimestamp));
+
+        // Publish cho tất cả bạn bè của user trạng thái mới nhất
+        eventPublisher.publishEvent(new UserPresenceUpdateEvent(userId, UserPresenceStatus.ONLINE));
     }
 
     @Override
-    public boolean forceOffline(String userId, String deviceId) {
+    public void forceOffline(String userId, String deviceId) {
         String memberValue = userId + ":" + deviceId;
         String trackingKey = String.format(USER_TRACKING_KEY_PATTERN, userId);
 
@@ -46,8 +54,9 @@ public class UserPresenceServiceImpl implements UserPresenceService {
         // Xóa thiết bị khỏi SET riêng của User
         redisTemplate.opsForSet().remove(trackingKey, deviceId);
 
-        // Kiểm tra xem user còn thiết bị nào không
-        return checkFullyOffline(trackingKey);
+        // Kiểm tra xem user còn thiết bị nào không và broadcast trạng thái mới nhất cho bạn bè
+        if(checkFullyOffline(trackingKey))
+            eventPublisher.publishEvent(new UserPresenceUpdateEvent(userId, UserPresenceStatus.OFFLINE));
     }
 
     @Scheduled(fixedRate = 10000)
@@ -70,9 +79,9 @@ public class UserPresenceServiceImpl implements UserPresenceService {
 
                 // KỂM TRA HOÀN TOÀN OFFLINE
                 if (checkFullyOffline(trackingKey)) {
-                    System.out.println(">>> User [" + userId + "] ĐÃ HOÀN TOÀN OFFLINE (Rớt mạng)!");
+                    System.out.println("User [" + userId + "] ĐÃ HOÀN TOÀN OFFLINE (Rớt mạng)!");
 
-                    // eventPublisher.publishEvent(new UserOfflineEvent(userId));
+                    eventPublisher.publishEvent(new UserPresenceUpdateEvent(userId, UserPresenceStatus.OFFLINE));
                 }
             }
 
@@ -86,6 +95,15 @@ public class UserPresenceServiceImpl implements UserPresenceService {
         String trackingKey = String.format(USER_TRACKING_KEY_PATTERN, userId);
         Long activeDeviceCount = redisTemplate.opsForSet().size(trackingKey);
         return activeDeviceCount != null && activeDeviceCount > 0;
+    }
+
+    @Override
+    public UserPresenceResponse getUserPresenceStatus(String userId) {
+        boolean isOnline = isUserOnline(userId);
+
+        return UserPresenceResponse.builder()
+                .status(isOnline ? UserPresenceStatus.ONLINE : UserPresenceStatus.OFFLINE)
+                .build();
     }
 
     private boolean checkFullyOffline(String trackingKey) {
