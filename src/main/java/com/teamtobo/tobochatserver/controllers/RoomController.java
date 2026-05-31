@@ -3,6 +3,7 @@ package com.teamtobo.tobochatserver.controllers;
 import com.teamtobo.tobochatserver.annotations.*;
 import com.teamtobo.tobochatserver.dtos.request.*;
 import com.teamtobo.tobochatserver.dtos.response.*;
+import com.teamtobo.tobochatserver.entities.enums.AttachmentType;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.entities.enums.MemberPermission;
 import com.teamtobo.tobochatserver.entities.enums.RoomType;
@@ -27,7 +28,7 @@ public class RoomController {
     private final RoomMemberService roomMemberService;
     private final RoomDomainService roomDomainService;
     private final RoomService roomService;
-    private final GroupPendingRequestService groupPendingRequestService;
+    private final AttachmentService attachmentService;
     private final GroupAcceptRequestService groupAcceptRequestService;
 
     @Operation(summary = "Tạo nhóm chat")
@@ -162,6 +163,22 @@ public class RoomController {
     ) {
         return ApiResponse.<PageResponse<RoomMemberResponse>>builder()
                 .result(roomMemberService.getRoomMembers(roomId, cursor, limit))
+                .build();
+    }
+
+    @Operation(summary = "Lấy danh sách media hoặc file của phòng chat")
+    @GetMapping("/{roomId}/attachments")
+    @RequireRoomMember
+    public ApiResponse<PageResponse<AttachmentItemResponse>> getRoomAttachments(
+            @RoomId @PathVariable String roomId,
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter @RequestParam AttachmentType type,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String cursor
+    ) {
+        String userId = jwt.getSubject();
+        return ApiResponse.<PageResponse<AttachmentItemResponse>>builder()
+                .result(attachmentService.getRoomAttachments(userId,roomId, type.name(), limit, cursor))
                 .build();
     }
 
