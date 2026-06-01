@@ -135,7 +135,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Xử lý theo setting cá nhân của User
         if (targetUser.isAllowAutoAddToGroup()) {
-            addMember(roomId, targetUser, inviterId);
+            addMember(roomId, targetUser, inviterId, false);
         } else {
             createGroupAcceptRequestNeo4j(roomId, inviterId, targetUserId);
         }
@@ -615,7 +615,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // B có cho phép tự động thêm vào group?
         if (targetUser.isAllowAutoAddToGroup()) {
-            addMember(roomId, targetUser, inviterId);
+            addMember(roomId, targetUser, inviterId, false);
             return MemberStatus.ADDED;
         }
 
@@ -656,7 +656,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // 1. Tạo RoomMember trong dynamoDB
     // 2. Lưu quan hệ vào Neo4j
     // Chỉ dùng cho nhóm
-    private void addMember(String roomId, User targetUser, String inviterId) {
+    private void addMember(String roomId, User targetUser, String inviterId, boolean ignoreSystemMessage) {
         String userId = targetUser.getUserId();
         TransactWriteItemsEnhancedRequest.Builder tx =
                 TransactWriteItemsEnhancedRequest.builder();
@@ -720,6 +720,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                     .avatarUrl(targetUser.getAvatarUrl())
                                     .build())
                             .build());
+
+            if (ignoreSystemMessage) return;
 
             // Tạo tin nhắn hệ thống
             eventPublisher.publishEvent(
@@ -911,7 +913,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             return;
         }
 
-        addMember(roomId, targetUser, null);
+        addMember(roomId, targetUser, null, true);
 
         // Tạo tin nhắn hệ thống
         eventPublisher.publishEvent(
