@@ -9,4 +9,5 @@ import lombok.Data;
 public class UserPresenceUpdateEvent {
     String userId;
     UserPresenceStatus status;
+    Long lastSeen;
 }

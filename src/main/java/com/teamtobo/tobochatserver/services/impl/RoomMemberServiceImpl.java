@@ -296,6 +296,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
         // Batch get
         Map<String, UserResponse> dmUsersMap = userService.getUsersMapByIds(dmUserIds);
+        Map<String, UserPresenceResponse> userPresenceResponseMap = userPresenceService.getUsersPresenceStatuses(dmUserIds);
         Map<String, Room> groupsMap = roomService.getRoomsMapByIds(groupRoomIds);
 
         List<RoomResponse> roomResponses = inboxItems.stream().map(i -> {
@@ -315,11 +316,16 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 String[] parts = roomId.split("_");
                 String otherUserId = parts[0].equals(userId) ? parts[1] : parts[0];
                 UserResponse otherUser = dmUsersMap.get(otherUserId);
+                UserPresenceResponse userPresenceResponse = userPresenceResponseMap.get(otherUserId);
 
                 if (otherUser != null) {
                     roomResponse.setRoomName(otherUser.getName()); // Tên hiển thị là tên người kia
                     roomResponse.setAvatarUrl(otherUser.getAvatarUrl());
                     roomResponse.setRoomType(RoomType.DM);
+                }
+
+                if (userPresenceResponse != null) {
+                    roomResponse.setUserPresence(userPresenceResponse);
                 }
             } else {
                 // Là Group
@@ -329,6 +335,9 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                     roomResponse.setAvatarUrl(group.getAvatarUrl());
                     roomResponse.setRoomType(group.getRoomType());
                     roomResponse.setMemberCount(group.getMemberCount());
+                    roomResponse.setUserPresence(UserPresenceResponse.builder()
+                            .status(UserPresenceStatus.UNAVAILABLE)
+                            .build());
                 }
             }
 
