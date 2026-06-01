@@ -172,6 +172,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void updateMemberRole(String roomId, String userId, String memberId, MemberUpdateRequest request) {
         RoomMember targetMember = getMember(roomId, memberId);
+        Room room = roomService.getRoomById(roomId, false);
         targetMember.setRole(request.getMemberRole());
         targetMember.setUpdatedAt(Instant.now().toString());
         roomMemberTable.updateItem(targetMember);
@@ -189,6 +190,21 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                                 "newRole", request.getMemberRole().name())
                 )
         );
+
+        RoomMemberResponse memberResponse = RoomMemberResponse.builder()
+                .id(memberId)
+                .role(targetMember.getRole())
+                .build();
+        // Build lại permission và gửi cho người dùng
+        MemberPermissionsResponse memberPermissionsResponse = roomMemberService.buildMemberPermission(memberResponse, room);
+
+        memberResponse.setMember(userResponse);
+        memberResponse.setRoomId(roomId);
+        memberResponse.setRoomName(room.getRoomName());
+        memberResponse.setPermissions(memberPermissionsResponse);
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("member_updated", memberResponse);
     }
 
     @Override
@@ -349,6 +365,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         return roomId;
     }
+
     private RoomResponse createDMRoom(String userId, List<String> members) { // Tạo phòng DM
         if (members.size() != 2) {
             throw new AppException(ErrorCode.ROOM_INVALID);
