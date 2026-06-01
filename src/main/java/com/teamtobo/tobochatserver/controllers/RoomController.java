@@ -29,7 +29,6 @@ public class RoomController {
     private final RoomDomainService roomDomainService;
     private final RoomService roomService;
     private final AttachmentService attachmentService;
-    private final GroupAcceptRequestService groupAcceptRequestService;
 
     @Operation(summary = "Tạo nhóm chat")
     @PostMapping
@@ -137,19 +136,6 @@ public class RoomController {
         String userId = jwt.getSubject();
         return ApiResponse.<PageResponse<GroupPendingRequestResponse>>builder()
                 .result(roomDomainService.getPendingRequests(roomId, userId, cursor, limit))
-                .build();
-    }
-
-    @Operation(summary = "Lấy danh sách người được mời vào nhóm chưa chấp nhận")
-    @GetMapping("/{roomId}/sent-requests")
-    @RequireMemberPermission(MemberPermission.GET_SENT_REQUESTS)
-    public ApiResponse<PageResponse<GroupSentRequestResponse>> getSentRequests(
-            @RoomId @PathVariable String roomId,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "10") int limit
-    ) {
-        return ApiResponse.<PageResponse<GroupSentRequestResponse>>builder()
-                .result(groupAcceptRequestService.getSentRequests(roomId, cursor, limit))
                 .build();
     }
 

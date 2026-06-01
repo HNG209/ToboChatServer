@@ -204,6 +204,7 @@ public class ContactServiceImpl implements ContactService {
                         .build(),
                         RoomType.DM)
         );
+
         log.info("Đã khởi tạo thành công Room DM lưu bên DynamoDB cho {} và {}", userId, senderId);
         // Tạo tin nhắn hệ thống
         eventPublisher.publishEvent(

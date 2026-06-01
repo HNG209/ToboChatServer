@@ -4,7 +4,6 @@ import com.teamtobo.tobochatserver.dtos.response.ApiResponse;
 import com.teamtobo.tobochatserver.dtos.response.GroupAcceptRequestResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomResponse;
-import com.teamtobo.tobochatserver.services.GroupAcceptRequestService;
 import com.teamtobo.tobochatserver.services.RoomDomainService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,8 +18,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/group-invites")
 @RequiredArgsConstructor
 public class GroupAcceptRequestController {
-
-    private final GroupAcceptRequestService groupAcceptRequestService;
     private final RoomDomainService roomDomainService;
 
     @Operation(summary = "Lấy danh sách lời mời vào nhóm")

@@ -2,10 +2,12 @@ package com.teamtobo.tobochatserver.services.handlers;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.RoomCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.response.MemberPermissionsResponse;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
 import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
+import com.teamtobo.tobochatserver.services.RoomDomainService;
 import com.teamtobo.tobochatserver.services.RoomMemberService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +23,18 @@ import java.util.List;
 public class RoomUpdateEventHandler {
     private final SocketIOServer socketIOServer;
     private final RoomMemberService roomMemberService;
+    private final RoomDomainService roomDomainService;
+
+    @Async
+    @EventListener
+    public void handleRoomCreate(RoomCreateEvent event) {
+        log.info("room created {}", event);
+        roomDomainService.createRoom(
+                event.getUserId(),
+                event.getRequest(),
+                event.getRoomType()
+        );
+    }
 
     @Async
     @EventListener

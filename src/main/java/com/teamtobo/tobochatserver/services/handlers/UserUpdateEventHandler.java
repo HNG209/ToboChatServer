@@ -3,9 +3,7 @@ package com.teamtobo.tobochatserver.services.handlers;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.UserPresenceUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.response.PageResponse;
-import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
 import com.teamtobo.tobochatserver.services.ContactService;
-import com.teamtobo.tobochatserver.services.UserPresenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -17,7 +15,7 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UserPresenceUpdateEventHandler {
+public class UserUpdateEventHandler {
     private final ContactService contactService;
     private final SocketIOServer socketIOServer;
 

@@ -20,7 +20,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class InboxEventHandler {
+public class InboxUpdateEventHandler {
     private final ChatService chatService;
     private final RoomService roomService;
     private final ContactService contactService;

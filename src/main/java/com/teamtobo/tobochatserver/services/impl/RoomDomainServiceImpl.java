@@ -1,10 +1,7 @@
 package com.teamtobo.tobochatserver.services.impl;
 
 import com.corundumstudio.socketio.SocketIOServer;
-import com.teamtobo.tobochatserver.dtos.events.MemberUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.events.RoomUpdateEvent;
-import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
-import com.teamtobo.tobochatserver.dtos.events.UnreadGroupRequestUpdateEvent;
+import com.teamtobo.tobochatserver.dtos.events.*;
 import com.teamtobo.tobochatserver.dtos.payloads.NewRoomPayload;
 import com.teamtobo.tobochatserver.dtos.payloads.RoomUpdatePayload;
 import com.teamtobo.tobochatserver.dtos.request.MemberUpdateRequest;
@@ -138,36 +135,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Xử lý theo setting cá nhân của User
         if (targetUser.isAllowAutoAddToGroup()) {
-            addMember(roomId, targetUserId);
-
-            socketIOServer.getRoomOperations(targetUserId)
-                    .sendEvent("new_room", NewRoomPayload.builder()
-                            .room(RoomResponse.builder()
-                                    .id(roomId)
-                                    .roomName(room.getRoomName())
-                                    .roomType(room.getRoomType())
-                                    .avatarUrl(room.getAvatarUrl())
-                                    .allowAddMember(room.isAllowAddMember())
-                                    .allowSendMessage(room.isAllowSendMessage())
-                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
-                                    .approveMember(room.isApproveMember())
-                                    .memberCount(room.getMemberCount())
-                                    // Nếu phòng đã có tin nhắn trước đó
-                                    .latestMessage(chatService.buildLatestMessage(
-                                            chatService.getRoomLatestMessage(roomId)))
-                                    .build())
-                            .inboxStatus(InboxStatus.ACTIVE)
-                            .build());
-
-            // Tạo tin nhắn hệ thống
-            eventPublisher.publishEvent(
-                    new SystemMessageCreateEvent(
-                            roomId,
-                            adminId,
-                            SystemAction.MEMBER_APPROVED,
-                            Map.of("approvedMemberId", targetUserId,
-                                    "approvedMemberName", targetUser.getName()))
-            );
+            addMember(roomId, targetUser, inviterId);
         } else {
             createGroupAcceptRequestNeo4j(roomId, inviterId, targetUserId);
         }
@@ -187,7 +155,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             // Nếu không phải bạn bè của người mời
             validateFriend(inviterId, targetUserId);
             User targetUser = userService.getUserById(targetUserId);
-            MemberStatus memberStatus = handleAddMember(room, inviter, targetUser, targetUserId);
+            MemberStatus memberStatus = handleAddMember(room, inviter, targetUser);
 
             FriendResponse friendResponse = FriendResponse.builder()
                     .id(targetUserId)
@@ -527,7 +495,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             User targetUser = userService.getUserById(memberId);
 
-            handleAddMember(room, creator, targetUser, memberId);
+            handleAddMember(room, creator, targetUser);
         }
 
         return RoomResponse.builder()
@@ -629,11 +597,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                 .build();
     }
 
-    // Kiểm tra và thêm các thành viên khác vào nhóm (tạo RoomMember hoặc GroupPendingRequest, GroupAcceptRequest)
-    // Chỉ sử dụng cho roomType = GROUP
-    private MemberStatus handleAddMember(Room room, RoomMember inviter, User targetUser, String targetUserId) {
+    // Xử lý nghiệp vụ thêm vào nhóm
+    private MemberStatus handleAddMember(Room room, RoomMember inviter, User targetUser) {
         String roomId = room.getPk().replace("ROOM#", "");
         String inviterId = inviter.getMemberId();
+        String targetUserId = targetUser.getUserId();
 
         // Nhóm có xét duyệt không?
         if (room.isApproveMember()) {
@@ -647,51 +615,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // B có cho phép tự động thêm vào group?
         if (targetUser.isAllowAutoAddToGroup()) {
-            addMember(roomId, targetUserId);
-
-            // Gửi socket để cập nhật lập tức inbox của người được add
-            // Chỉ gửi nếu người đó cho tự động thêm vào group
-            socketIOServer.getRoomOperations(targetUserId)
-                    .sendEvent("new_room", NewRoomPayload.builder()
-                            .room(RoomResponse.builder()
-                                    .id(roomId)
-                                    .roomName(room.getRoomName())
-                                    .roomType(room.getRoomType())
-                                    .avatarUrl(room.getAvatarUrl())
-                                    .allowAddMember(room.isAllowAddMember())
-                                    .allowSendMessage(room.isAllowSendMessage())
-                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
-                                    .approveMember(room.isApproveMember())
-                                    .memberCount(room.getMemberCount())
-                                    // Nếu phòng đã có tin nhắn trước đó
-                                    .latestMessage(chatService.buildLatestMessage(
-                                            chatService.getRoomLatestMessage(roomId)))
-                                    .build())
-                            .inboxStatus(InboxStatus.ACTIVE)
-                            .build());
-
-            socketIOServer.getRoomOperations("room:" + roomId)
-                    .sendEvent("new_member", RoomMemberResponse.builder()
-                            .id(targetUserId)
-                            .roomId(roomId)
-                            .role(MemberRole.MEMBER)
-                            .member(UserResponse.builder()
-                                    .id(targetUserId)
-                                    .name(targetUser.getName())
-                                    .avatarUrl(targetUser.getAvatarUrl())
-                                    .build())
-                            .build());
-
-            // Tạo tin nhắn hệ thống
-            eventPublisher.publishEvent(
-                    new SystemMessageCreateEvent(
-                            roomId,
-                            inviterId,
-                            SystemAction.MEMBER_ADDED,
-                            Map.of("newMemberId", targetUserId,
-                                    "newMemberName", targetUser.getName())) // Thông tin lịch sử, chấp nhận không nhất quán
-            );
-
+            addMember(roomId, targetUser, inviterId);
             return MemberStatus.ADDED;
         }
 
@@ -731,7 +655,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
     // 1. Tạo RoomMember trong dynamoDB
     // 2. Lưu quan hệ vào Neo4j
-    private void addMember(String roomId, String userId) {
+    // Chỉ dùng cho nhóm
+    private void addMember(String roomId, User targetUser, String inviterId) {
+        String userId = targetUser.getUserId();
         TransactWriteItemsEnhancedRequest.Builder tx =
                 TransactWriteItemsEnhancedRequest.builder();
         String now = Instant.now().toString();
@@ -761,6 +687,49 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
             // Ánh xạ lên Neo4j
             addMemberNeo4j(roomId, userId);
+
+            // Gửi socket để cập nhật lập tức inbox của người được add
+            // Chỉ gửi nếu người đó cho tự động thêm vào group
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("new_room", NewRoomPayload.builder()
+                            .room(RoomResponse.builder()
+                                    .id(roomId)
+                                    .roomName(room.getRoomName())
+                                    .roomType(room.getRoomType())
+                                    .avatarUrl(room.getAvatarUrl())
+                                    .allowAddMember(room.isAllowAddMember())
+                                    .allowSendMessage(room.isAllowSendMessage())
+                                    .allowUpdateMetadata(room.isAllowUpdateMetadata())
+                                    .approveMember(room.isApproveMember())
+                                    .memberCount(room.getMemberCount())
+                                    // Nếu phòng đã có tin nhắn trước đó
+                                    .latestMessage(chatService.buildLatestMessage(
+                                            chatService.getRoomLatestMessage(roomId)))
+                                    .build())
+                            .inboxStatus(InboxStatus.ACTIVE)
+                            .build());
+
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("new_member", RoomMemberResponse.builder()
+                            .id(userId)
+                            .roomId(roomId)
+                            .role(MemberRole.MEMBER)
+                            .member(UserResponse.builder()
+                                    .id(userId)
+                                    .name(targetUser.getName())
+                                    .avatarUrl(targetUser.getAvatarUrl())
+                                    .build())
+                            .build());
+
+            // Tạo tin nhắn hệ thống
+            eventPublisher.publishEvent(
+                    new SystemMessageCreateEvent(
+                            roomId,
+                            inviterId,
+                            SystemAction.MEMBER_ADDED,
+                            Map.of("newMemberId", userId,
+                                    "newMemberName", targetUser.getName())) // Thông tin lịch sử, chấp nhận không nhất quán
+            );
         } catch (Exception e) {
             throw new AppException(ErrorCode.ADD_MEMBER_ERROR);
         }
@@ -934,6 +903,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     @Override
     public void respondInviteNeo4j(String userId, String roomId, boolean accepted) {
         MemberStatus memberStatus = getMemberStatusNeo4j(roomId, userId);
+        User targetUser = userService.getUserById(userId);
         if (memberStatus != MemberStatus.SENT) return;
 
         if (!accepted) {
@@ -941,7 +911,7 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             return;
         }
 
-        addMember(roomId, userId);
+        addMember(roomId, targetUser, null);
 
         // Tạo tin nhắn hệ thống
         eventPublisher.publishEvent(
