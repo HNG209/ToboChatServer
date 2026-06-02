@@ -443,7 +443,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Cập nhật real time cho người bên kia (otherId)
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
-        otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(otherId, roomId)));
+        MessageResponse otherLatestMessage = chatService.getLatestMessage(otherId, roomId);
+
+        if (otherLatestMessage != null) {
+            otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(otherLatestMessage));
+        }
+
         socketIOServer.getRoomOperations(otherId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(otherRoomMetadata)
@@ -451,7 +456,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
-        myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(userId, roomId)));
+        MessageResponse myLatestMessage = chatService.getLatestMessage(userId, roomId);
+
+        if (myLatestMessage != null) {
+            myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(myLatestMessage));
+        }
+
         socketIOServer.getRoomOperations(userId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(myRoomMetadata)

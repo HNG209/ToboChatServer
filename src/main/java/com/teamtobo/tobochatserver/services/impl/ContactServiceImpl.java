@@ -141,7 +141,13 @@ public class ContactServiceImpl implements ContactService {
         if (userId.equals(otherId)) {
             return FriendStatus.SELF;
         }
+
         String statusStr = userNodeRepository.getFriendStatus(userId, otherId);
+
+        if (statusStr == null || statusStr.isBlank()) {
+            return FriendStatus.STRANGER;
+        }
+
         return FriendStatus.valueOf(statusStr);
     }
 
