@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.controllers;
 
+import com.teamtobo.tobochatserver.annotations.UserRateLimit;
 import com.teamtobo.tobochatserver.dtos.request.AvatarUpdateRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaConfirmRequest;
 import com.teamtobo.tobochatserver.dtos.request.MfaInitRequest;
