@@ -74,7 +74,14 @@ public class CallServiceImpl implements CallService {
         socketIOServer.getRoomOperations(callerId).sendEvent("call_cancelled",
                 CallRequest.builder().roomId(roomId).build());
 
-        if (result == null || result.getStatus().equals("ONGOING")) {
+        if (result == null) {
+            socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
+                    Map.of("roomId", roomId,
+                            "status", CallStatus.INACTIVE));
+            return;
+        }
+
+        if (result.getStatus().equals("ONGOING")) {
             socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
                     Map.of("roomId", roomId,
                             "status", CallStatus.ACTIVE));
