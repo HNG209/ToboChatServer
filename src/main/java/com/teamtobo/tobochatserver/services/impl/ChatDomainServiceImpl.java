@@ -37,7 +37,6 @@ public class ChatDomainServiceImpl implements ChatDomainService {
     private final RoomMemberService roomMemberService;
     private final RoomDomainService roomDomainService;
     private final ChatService chatService;
-    private final S3Client s3Client;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -134,6 +133,10 @@ public class ChatDomainServiceImpl implements ChatDomainService {
                     .content(message.getContent())
                     .user(userService.getUserProfile(senderId))
                     .replyTo(chatService.getRoomMessage(senderId, roomId, request.getReplyTo()))
+                    .messageStatus(MessageStatus.NORMAL)
+                    .messageType(MessageType.USER)
+                    .myReactions(Collections.emptySet())
+                    .reactionsSummary(Collections.emptyMap())
                     .attachments(finalAttachments) // Gửi URL sạch cho người nhận
                     .createdAt(now)
                     .build();

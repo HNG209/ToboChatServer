@@ -14,7 +14,6 @@ import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.entities.enums.MessageStatus;
 import com.teamtobo.tobochatserver.services.ChatService;
-import com.teamtobo.tobochatserver.services.RoomService;
 import com.teamtobo.tobochatserver.services.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +44,6 @@ public class ChatServiceImpl implements ChatService {
     private final DynamoDbTable<Message> messageTable;
     private final SocketIOServer socketIOServer;
     private final UserService userService;
-    private final RoomService roomService;
     private final S3Presigner s3Presigner;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -392,7 +390,7 @@ public class ChatServiceImpl implements ChatService {
                     .reactionType(reactionType)
                     .build();
 
-            socketIOServer.getRoomOperations(roomId)
+            socketIOServer.getRoomOperations("room:" + roomId)
                     .sendEvent("reaction_added", reactionPayload);
         } catch (software.amazon.awssdk.services.dynamodb.model.DynamoDbException e) {
             // Nếu Parent Map chưa tồn tại
@@ -711,8 +709,11 @@ public class ChatServiceImpl implements ChatService {
             // Nếu không phải là tin nhắn mới nhất của nhóm thì không cập nhật inbox cho các thành viên
             if(!Objects.equals(roomLatestMessage.getId(), messageId)) return;
 
+            MessageResponse messageResponse = buildMessageResponse(message);
+            messageResponse.setUser(UserResponse.builder().id(userId).build());
+
             eventPublisher.publishEvent(
-                    new MemberInboxUpdateEvent(roomId, userId, buildMessageResponse(message), true)
+                    new MemberInboxUpdateEvent(roomId, userId, messageResponse, true)
             );
         } catch (RuntimeException e) {
             log.error("Lỗi nghiệp vụ revoke message: {}", e.getMessage());
