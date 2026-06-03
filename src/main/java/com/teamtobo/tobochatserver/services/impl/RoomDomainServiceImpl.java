@@ -821,11 +821,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
 
-        if (page == 0) {
-            eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, null, null, UnreadUpdateType.RESET));
-            log.info("Bắn event RESET group badge thành công cho user: {}", userId);
-        }
-
         List<RoomNodeRepository.AcceptRequestData> requestDataList = roomNodeRepository.findAcceptRequestsByUserId(userId, pageable);
 
         boolean hasNext = requestDataList.size() > limit;
@@ -903,7 +898,6 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     public void createGroupAcceptRequestNeo4j(String roomId, String inviterId, String targetUserId) {
         roomNodeRepository.createSentRequest(roomId, inviterId, targetUserId);
         eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(targetUserId, inviterId, roomId, UnreadUpdateType.UPDATE));
-        log.info("Bắn event Update group badge thành công cho user: {}", targetUserId);
     }
 
     // Tạo lời mời chờ duyệt
@@ -917,6 +911,9 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         MemberStatus memberStatus = getMemberStatusNeo4j(roomId, userId);
         User targetUser = userService.getUserById(userId);
         if (memberStatus != MemberStatus.SENT) return;
+
+        // Reset unread cho người dùng
+        eventPublisher.publishEvent(new UnreadGroupRequestUpdateEvent(userId, null, null, UnreadUpdateType.RESET));
 
         if (!accepted) {
             deleteMemberRelationshipNeo4j(roomId, userId);
