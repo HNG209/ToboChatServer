@@ -30,6 +30,7 @@ public class UserPresenceServiceImpl implements UserPresenceService {
         long currentTimestamp = Instant.now().toEpochMilli();
         String memberValue = userId + ":" + deviceId;
         String trackingKey = String.format(USER_TRACKING_KEY_PATTERN, userId);
+        boolean wasAlreadyOnline = isUserOnline(userId);
 
         // Cập nhật vào ZSET tổng
         redisTemplate.opsForZSet().add(ACTIVE_SESSIONS_ZSET, memberValue, currentTimestamp);
@@ -41,6 +42,9 @@ public class UserPresenceServiceImpl implements UserPresenceService {
 
         // Cập nhật Last Seen
         redisTemplate.opsForValue().set(String.format(LAST_SEEN_KEY_PATTERN, userId), String.valueOf(currentTimestamp));
+
+        // Nếu trạng thái trước đó giống hiện tại thì không broadcast nữa
+        if (wasAlreadyOnline) return;
 
         // Publish cho tất cả bạn bè của user trạng thái mới nhất
         eventPublisher.publishEvent(new UserPresenceUpdateEvent(userId, UserPresenceStatus.ONLINE, currentTimestamp));
