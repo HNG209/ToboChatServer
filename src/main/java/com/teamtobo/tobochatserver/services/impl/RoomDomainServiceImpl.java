@@ -173,38 +173,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     public void updateMemberRole(String roomId, String userId, String memberId, MemberUpdateRequest request) {
         RoomMember targetMember = getMember(roomId, memberId);
         Room room = roomService.getRoomById(roomId, false);
+
         targetMember.setRole(request.getMemberRole());
         targetMember.setUpdatedAt(Instant.now().toString());
+
         roomMemberTable.updateItem(targetMember);
 
-        UserResponse userResponse = userService.getUserProfile(memberId);
-
-        // Tạo tin nhắn hệ thống
-        eventPublisher.publishEvent(
-                new SystemMessageCreateEvent(
-                        roomId,
-                        userId,
-                        SystemAction.MEMBER_ROLE_UPDATED,
-                        Map.of("updatedMemberId", memberId,
-                                "updatedMemberName", userResponse.getName(),
-                                "newRole", request.getMemberRole().name())
-                )
+        emitMemberRoleUpdated(
+                roomId,
+                userId,
+                memberId,
+                request.getMemberRole(),
+                room
         );
-
-        RoomMemberResponse memberResponse = RoomMemberResponse.builder()
-                .id(memberId)
-                .role(targetMember.getRole())
-                .build();
-        // Build lại permission và gửi cho người dùng
-        MemberPermissionsResponse memberPermissionsResponse = roomMemberService.buildMemberPermission(memberResponse, room);
-
-        memberResponse.setMember(userResponse);
-        memberResponse.setRoomId(roomId);
-        memberResponse.setRoomName(room.getRoomName());
-        memberResponse.setPermissions(memberPermissionsResponse);
-
-        socketIOServer.getRoomOperations("room:" + roomId)
-                .sendEvent("member_updated", memberResponse);
     }
 
     @Override
@@ -297,35 +278,40 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         }
 
         room.setMemberCount(room.getMemberCount() - 1);
-        TransactWriteItemsEnhancedRequest.Builder txBuilder = TransactWriteItemsEnhancedRequest.builder();
+
+        TransactWriteItemsEnhancedRequest.Builder txBuilder =
+                TransactWriteItemsEnhancedRequest.builder();
 
         txBuilder.addUpdateItem(roomTable, room);
 
-        if (member.getRole() == MemberRole.ADMIN) {
-            if (newAdminId == null)
-                throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+        boolean adminTransferred = false;
+        String transferredAdminId = null;
 
-            if (newAdminId.equals(userId))
+        if (member.getRole() == MemberRole.ADMIN) {
+            if (newAdminId == null || newAdminId.equals(userId)) {
                 throw new AppException(ErrorCode.REQUIRE_EXCHANGER);
+            }
 
             RoomMember newAdmin = getMember(roomId, newAdminId);
 
-            if (newAdmin == null)
-                throw new AppException(ErrorCode.NOT_IN_ROOM);
-
-            newAdmin.setRole(MemberRole.ADMIN); // thay thế admin
+            newAdmin.setRole(MemberRole.ADMIN);
 
             txBuilder.addUpdateItem(roomMemberTable, newAdmin);
+
+            adminTransferred = true;
+            transferredAdminId = newAdminId;
         }
 
         txBuilder.addDeleteItem(roomMemberTable, member);
+
         try {
             enhancedClient.transactWriteItems(txBuilder.build());
 
-            // Xoá cạnh quan hệ trong Neo4j
             deleteMemberRelationshipNeo4j(roomId, userId);
 
-            // Tạo tin nhắn hệ thống
+            socketIOServer.getRoomOperations("room:" + roomId)
+                    .sendEvent("member_removed", userId);
+
             eventPublisher.publishEvent(
                     new SystemMessageCreateEvent(
                             roomId,
@@ -334,6 +320,15 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                             null
                     )
             );
+            if (adminTransferred) {
+                emitMemberRoleUpdated(
+                        roomId,
+                        userId,
+                        transferredAdminId,
+                        MemberRole.ADMIN,
+                        room
+                );
+            }
         } catch (Exception e) {
             throw new AppException(ErrorCode.CANNOT_LEAVE_ROOM);
         }
@@ -448,7 +443,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Cập nhật real time cho người bên kia (otherId)
         RoomResponse otherRoomMetadata = roomMemberService.getRoomMetadata(otherId, roomId);
-        otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(otherId, roomId)));
+        MessageResponse otherLatestMessage = chatService.getLatestMessage(otherId, roomId);
+
+        if (otherLatestMessage != null) {
+            otherRoomMetadata.setLatestMessage(chatService.buildLatestMessage(otherLatestMessage));
+        }
+
         socketIOServer.getRoomOperations(otherId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(otherRoomMetadata)
@@ -456,7 +456,12 @@ public class RoomDomainServiceImpl implements RoomDomainService {
                         .build());
 
         RoomResponse myRoomMetadata = roomMemberService.getRoomMetadata(userId, roomId);
-        myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(chatService.getLatestMessage(userId, roomId)));
+        MessageResponse myLatestMessage = chatService.getLatestMessage(userId, roomId);
+
+        if (myLatestMessage != null) {
+            myRoomMetadata.setLatestMessage(chatService.buildLatestMessage(myLatestMessage));
+        }
+
         socketIOServer.getRoomOperations(userId)
                 .sendEvent("new_room", NewRoomPayload.builder()
                         .room(myRoomMetadata)
@@ -972,6 +977,44 @@ public class RoomDomainServiceImpl implements RoomDomainService {
         } catch (IllegalArgumentException e) {
             return MemberStatus.NOT_IN_GROUP;
         }
+    }
+
+    private void emitMemberRoleUpdated(
+            String roomId,
+            String actorId,
+            String memberId,
+            MemberRole newRole,
+            Room room
+    ) {
+        UserResponse userResponse = userService.getUserProfile(memberId);
+
+        eventPublisher.publishEvent(
+                new SystemMessageCreateEvent(
+                        roomId,
+                        actorId,
+                        SystemAction.MEMBER_ROLE_UPDATED,
+                        Map.of(
+                                "updatedMemberId", memberId,
+                                "updatedMemberName", userResponse.getName(),
+                                "newRole", newRole.name()
+                        )
+                )
+        );
+
+        RoomMemberResponse memberResponse = RoomMemberResponse.builder()
+                .id(memberId)
+                .role(newRole)
+                .member(userResponse)
+                .roomId(roomId)
+                .roomName(room.getRoomName())
+                .build();
+
+        memberResponse.setPermissions(
+                roomMemberService.buildMemberPermission(memberResponse, room)
+        );
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("member_updated", memberResponse);
     }
 
     @Override
