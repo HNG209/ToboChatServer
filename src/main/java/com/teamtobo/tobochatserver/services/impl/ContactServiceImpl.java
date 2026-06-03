@@ -1,5 +1,6 @@
 package com.teamtobo.tobochatserver.services.impl;
 
+import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.RoomCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.SystemMessageCreateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UnreadFriendRequestUpdateEvent;
@@ -37,6 +38,7 @@ public class ContactServiceImpl implements ContactService {
     private final RoomNodeRepository roomNodeRepository;
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SocketIOServer socketIOServer;
 
     @Override
     public PageResponse<FriendResponse> getFriends(String userId, String roomId, String nextCursor, int limit) {
@@ -127,13 +129,45 @@ public class ContactServiceImpl implements ContactService {
         if (status == FriendStatus.PENDING || status == FriendStatus.SENT) {
             throw new AppException(ErrorCode.FRIEND_REQUEST_ALREADY_SENT);
         }
+
+        // Tạo cạnh friend request
         userNodeRepository.createFriendRequest(userId, otherId);
+
+        // Cập nhật unread cho người nhận
         eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, userId, UnreadUpdateType.UPDATE));
+
+        UserResponse userResponse = userService.getUserProfile(userId);
+
+        FriendRequestResponse friendRequestResponse = FriendRequestResponse.builder()
+                .id(userId)
+                .name(userResponse.getName())
+                .avatarUrl(userResponse.getAvatarUrl())
+                .createdAt(userResponse.getCreatedAt())
+                .build();
+
+        socketIOServer.getRoomOperations(otherId).sendEvent("new_friend_request", friendRequestResponse);
     }
 
     @Override
-    public void cancelFriendRequest(String userId, String otherId) {
+    public void cancelFriendRequest(String userId, String otherId) { // Người gửi chủ động cancel
+        FriendStatus currentStatus = this.getFriendStatus(userId, otherId);
+        if (currentStatus != FriendStatus.SENT) return;
+
         userNodeRepository.deleteFriendRequest(userId, otherId);
+
+        socketIOServer.getRoomOperations(userId)
+                .sendEvent("friend_request_cancelled", Map.of(
+                        "otherId", otherId,
+                        "type", FriendRequestType.SENT
+                ));
+
+        socketIOServer.getRoomOperations(otherId)
+                .sendEvent("friend_request_cancelled", Map.of(
+                        "otherId", userId,
+                        "type", FriendRequestType.PENDING
+                ));
+
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(otherId, null, UnreadUpdateType.RESET));
     }
 
     @Override
@@ -155,11 +189,6 @@ public class ContactServiceImpl implements ContactService {
     public PageResponse<FriendRequestResponse> getFriendRequests(FriendRequestType type, String userId, String cursor, int limit) {
         int page = (cursor == null || cursor.isEmpty()) ? 0 : Integer.parseInt(cursor);
         Pageable pageable = PageRequest.of(page, limit);
-
-        if (type == FriendRequestType.PENDING && page == 0) {
-            eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
-            log.info("Bắn event RESET badge cho user: {}", userId);
-        }
 
         List<UserNode> requestNodes;
         if (type == FriendRequestType.SENT) {
@@ -193,15 +222,40 @@ public class ContactServiceImpl implements ContactService {
     @Override
     public void responseFriendRequest(String userId, FriendAcceptRequest request) {
         String senderId = request.getFromUser();
+        UserResponse myInfo = userService.getUserProfile(userId);
+        UserResponse sender = userService.getUserProfile(senderId);
 
         FriendStatus currentStatus = this.getFriendStatus(userId, senderId);
         if (currentStatus != FriendStatus.PENDING) return;
 
         userNodeRepository.deleteFriendRequest(senderId, userId);
 
+        // Cập nhật unread cho người dùng nếu đã chấp nhận hoặc từ chối
+        eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
+
         if (!request.isAccepted()) return;
 
         userNodeRepository.createFriend(senderId, userId);
+
+        // Gửi sự kiện cho người gửi lời mời
+        FriendResponse myInfoResponse = FriendResponse.builder()
+                .id(userId)
+                .name(myInfo.getName())
+                .avatarUrl(myInfo.getAvatarUrl())
+                .build();
+
+        socketIOServer.getRoomOperations(senderId)
+                .sendEvent("new_friend", myInfoResponse);
+
+        // Gửi sự kiện cho người chấp nhận (cập nhật trên các thiết bị khác)
+        FriendResponse senderInfoResponse = FriendResponse.builder()
+                .id(userId)
+                .name(sender.getName())
+                .avatarUrl(sender.getAvatarUrl())
+                .build();
+
+        socketIOServer.getRoomOperations(userId)
+                .sendEvent("new_friend", senderInfoResponse);
 
         eventPublisher.publishEvent(
                 new RoomCreateEvent(userId,
@@ -229,5 +283,11 @@ public class ContactServiceImpl implements ContactService {
         if(currentStatus != FriendStatus.FRIEND) throw new AppException(ErrorCode.NOT_FRIEND);
 
         userNodeRepository.deleteFriend(userId, otherId);
+
+        socketIOServer.getRoomOperations(userId)
+                .sendEvent("friend_deleted", otherId);
+
+        socketIOServer.getRoomOperations(otherId)
+                .sendEvent("friend_deleted", userId);
     }
 }

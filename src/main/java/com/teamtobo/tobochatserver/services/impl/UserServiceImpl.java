@@ -274,15 +274,6 @@ public class UserServiceImpl implements UserService {
     @Override
     public void increaseFriendRequestCount(String userId, String senderId) {
         this.updateFriendRequestCount(userId, 1);
-        UserResponse userResponse = getUserProfile(senderId);
-        FriendRequestResponse friendResponse = FriendRequestResponse.builder()
-                .id(senderId)
-                .name(userResponse.getName())
-                .avatarUrl(userResponse.getAvatarUrl())
-                .createdAt(userResponse.getCreatedAt())
-                .build();
-        socketIOServer.getRoomOperations(userId).sendEvent("friend_request_unread_update", friendResponse);
-        log.info("send unread friend request");
     }
 
     @Override
