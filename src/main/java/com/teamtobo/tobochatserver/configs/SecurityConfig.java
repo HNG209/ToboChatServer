@@ -25,7 +25,7 @@ public class SecurityConfig {
             "/test/init",
             "/contacts/test/**",
             "/migrator/**",
-            "/ai/test/**"
+            "/cleanup/**",
     };
 
     @Bean
