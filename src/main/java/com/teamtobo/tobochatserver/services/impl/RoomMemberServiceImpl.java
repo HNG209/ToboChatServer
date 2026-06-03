@@ -296,7 +296,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
 
         // Batch get
         Map<String, UserResponse> dmUsersMap = userService.getUsersMapByIds(dmUserIds);
-        Map<String, UserPresenceResponse> userPresenceResponseMap = userPresenceService.getUsersPresenceStatuses(dmUserIds);
+        Map<String, UserPresenceResponse> userPresenceResponseMap = userPresenceService.getUsersPresenceStatuses(userId, dmUserIds);
         Map<String, Room> groupsMap = roomService.getRoomsMapByIds(groupRoomIds);
 
         List<RoomResponse> roomResponses = inboxItems.stream().map(i -> {
@@ -371,7 +371,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
             }
 
             UserResponse other = userService.getUserProfile(otherUserId);
-            UserPresenceResponse presenceResponse = userPresenceService.getUserPresenceStatus(otherUserId);
+            UserPresenceResponse presenceResponse = userPresenceService.getUserPresenceStatus(userId, otherUserId);
 
             return RoomResponse.builder()
                     .id(roomId)

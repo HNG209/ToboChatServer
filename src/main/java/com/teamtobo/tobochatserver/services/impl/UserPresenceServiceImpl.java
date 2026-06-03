@@ -2,7 +2,9 @@ package com.teamtobo.tobochatserver.services.impl;
 
 import com.teamtobo.tobochatserver.dtos.events.UserPresenceUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.response.UserPresenceResponse;
+import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.UserPresenceStatus;
+import com.teamtobo.tobochatserver.services.ContactService;
 import com.teamtobo.tobochatserver.services.UserPresenceService;
 import lombok.AllArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,6 +26,8 @@ public class UserPresenceServiceImpl implements UserPresenceService {
     private static final String LAST_SEEN_KEY_PATTERN = "last_seen:user:%s";
     private static final long TIMEOUT_MILLISECONDS = 60000;
     private final ApplicationEventPublisher eventPublisher;
+
+    private final ContactService contactService;
 
     @Override
     public void receiveHeartbeat(String userId, String deviceId) {
@@ -110,9 +114,16 @@ public class UserPresenceServiceImpl implements UserPresenceService {
     }
 
     @Override
-    public UserPresenceResponse getUserPresenceStatus(String userId) {
-        boolean isOnline = isUserOnline(userId);
-        Long lastSeen = getLastSeen(userId);
+    public UserPresenceResponse getUserPresenceStatus(String userId, String otherId) {
+        // Chỉ cho xem trạng thái hoạt động nếu là bạn bè
+        FriendStatus friendStatus = contactService.getFriendStatus(userId, otherId);
+        if (friendStatus != FriendStatus.FRIEND)
+            return UserPresenceResponse.builder()
+                    .status(UserPresenceStatus.UNAVAILABLE)
+                    .build();
+
+        boolean isOnline = isUserOnline(otherId);
+        Long lastSeen = getLastSeen(otherId);
 
         return UserPresenceResponse.builder()
                 .status(isOnline ? UserPresenceStatus.ONLINE : UserPresenceStatus.OFFLINE)
@@ -121,16 +132,16 @@ public class UserPresenceServiceImpl implements UserPresenceService {
     }
 
     @Override
-    public Map<String, UserPresenceResponse> getUsersPresenceStatuses(List<String> userIds) {
-        if (userIds == null || userIds.isEmpty()) {
+    public Map<String, UserPresenceResponse> getUsersPresenceStatuses(String userId, List<String> otherIds) {
+        if (otherIds == null || otherIds.isEmpty()) {
             return Collections.emptyMap();
         }
 
-        List<String> trackingKeys = userIds.stream()
+        List<String> trackingKeys = otherIds.stream()
                 .map(id -> String.format(USER_TRACKING_KEY_PATTERN, id))
                 .toList();
 
-        List<String> lastSeenKeys = userIds.stream()
+        List<String> lastSeenKeys = otherIds.stream()
                 .map(id -> String.format(LAST_SEEN_KEY_PATTERN, id))
                 .toList();
 
@@ -154,8 +165,17 @@ public class UserPresenceServiceImpl implements UserPresenceService {
         // 4. Lắp ráp dữ liệu trả về
         Map<String, UserPresenceResponse> resultMap = new HashMap<>();
 
-        for (int i = 0; i < userIds.size(); i++) {
-            String userId = userIds.get(i);
+        for (int i = 0; i < otherIds.size(); i++) {
+            String otherId = otherIds.get(i);
+
+            // Chỉ cho xem trạng thái hoạt động nếu là bạn bè
+            FriendStatus friendStatus = contactService.getFriendStatus(userId, otherId);
+            if (friendStatus != FriendStatus.FRIEND) {
+                resultMap.put(otherId, UserPresenceResponse.builder()
+                        .status(UserPresenceStatus.UNAVAILABLE)
+                        .build());
+                continue;
+            }
 
             // Xử lý isOnline từ kết quả Pipelining
             Object scardResult = onlineStatuses.get(i);
@@ -165,7 +185,7 @@ public class UserPresenceServiceImpl implements UserPresenceService {
             String lastSeenStr = lastSeenValues != null ? lastSeenValues.get(i) : null;
             Long lastSeen = lastSeenStr != null ? Long.parseLong(lastSeenStr) : 0L;
 
-            resultMap.put(userId, UserPresenceResponse.builder()
+            resultMap.put(otherId, UserPresenceResponse.builder()
                     .status(isOnline ? UserPresenceStatus.ONLINE : UserPresenceStatus.OFFLINE)
                     .lastSeen(lastSeen)
                     .build());

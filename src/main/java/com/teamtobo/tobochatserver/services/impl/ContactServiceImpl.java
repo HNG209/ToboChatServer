@@ -249,7 +249,7 @@ public class ContactServiceImpl implements ContactService {
 
         // Gửi sự kiện cho người chấp nhận (cập nhật trên các thiết bị khác)
         FriendResponse senderInfoResponse = FriendResponse.builder()
-                .id(userId)
+                .id(senderId)
                 .name(sender.getName())
                 .avatarUrl(sender.getAvatarUrl())
                 .build();
