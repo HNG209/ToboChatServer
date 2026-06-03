@@ -12,6 +12,7 @@ import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.exception.AppException;
 import com.teamtobo.tobochatserver.exception.ErrorCode;
 import com.teamtobo.tobochatserver.services.ContactService;
+import com.teamtobo.tobochatserver.services.SearchService;
 import com.teamtobo.tobochatserver.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
+    private final SearchService searchService;
     private final ContactService contactService;
 
     @Operation(summary = "Thông tin người dùng hiện tại")
@@ -51,7 +53,7 @@ public class UserController {
             @RequestParam(defaultValue = "10") int limit) {
         String userId = jwt.getSubject();
 
-        PageResponse<UserResponse> user = userService.findByEmail(userId, email, cursor, limit);
+        PageResponse<UserResponse> user = searchService.findByEmail(userId, email, cursor, limit);
         return ApiResponse.<PageResponse<UserResponse>>builder()
                 .result(user)
                 .build();
