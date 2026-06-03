@@ -903,7 +903,19 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // Tạo lời mời chờ duyệt
     @Override
     public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        UserResponse inviter = userService.getUserProfile(inviterId);
+        UserResponse targetUser = userService.getUserProfile(targetUserId);
+
         roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);
+
+        GroupPendingRequestResponse response = GroupPendingRequestResponse.builder()
+                .roomId(roomId)
+                .user(targetUser)
+                .inviter(inviter)
+                .build();
+
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("new_pending_request", response);
     }
 
     @Override
