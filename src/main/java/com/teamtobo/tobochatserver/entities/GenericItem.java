@@ -15,4 +15,8 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 @DynamoDbBean
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class GenericItem extends BaseEntity {
+    private Integer friendRequestCount;
+    private Integer groupRequestCount;
+    private Integer totalUnreadContacts;
+    private Integer totalUnreadMessages;
 }

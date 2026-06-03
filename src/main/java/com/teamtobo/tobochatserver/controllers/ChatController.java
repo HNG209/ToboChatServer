@@ -2,6 +2,7 @@ package com.teamtobo.tobochatserver.controllers;
 
 import com.teamtobo.tobochatserver.annotations.RequireRoomMember;
 import com.teamtobo.tobochatserver.annotations.RoomId;
+import com.teamtobo.tobochatserver.annotations.UserRateLimit;
 import com.teamtobo.tobochatserver.dtos.request.*;
 import com.teamtobo.tobochatserver.dtos.response.*;
 import com.teamtobo.tobochatserver.entities.enums.ReactionType;
@@ -26,6 +27,7 @@ public class ChatController {
     private final ChatDomainService chatDomainService;
     private final PollService pollService;
 
+    @UserRateLimit(apiName = "getMessages", capacity = 2, refillTokens = 1, refillSeconds = 2)
     @Operation(summary = "Danh sách tin nhắn của phòng hiện tại")
     @GetMapping("/rooms/{roomId}/messages")
     @RequireRoomMember
@@ -55,6 +57,8 @@ public class ChatController {
                 .build();
     }
 
+    // Tối đa 5 lần gọi, mỗi 2 giây hồi lại 1 lượt
+    @UserRateLimit(apiName = "sendMessage", refillSeconds = 2)
     @Operation(summary = "Gửi message")
     @PostMapping("/rooms/{roomId}/messages")
     @RequireRoomMember
@@ -69,6 +73,7 @@ public class ChatController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "addReaction", capacity = 5, refillTokens = 1, refillSeconds = 2)
     @Operation(summary = "Thả reaction cho tin nhắn")
     @PostMapping("/rooms/{roomId}/messages/{messageId}/reactions")
     @RequireRoomMember
@@ -115,6 +120,7 @@ public class ChatController {
         return ResponseEntity.ok().body("Thu hồi thành công");
     }
 
+    @UserRateLimit(apiName = "forwardMessage", capacity = 2, refillTokens = 1, refillSeconds = 2)
     @Operation(summary = "Gửi tin nhắn cho nhiều group")
     @PostMapping("/rooms/forwardMessage")
     public ResponseEntity<?> forwardMessage(

@@ -40,6 +40,12 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+<!--        Bucket4j-->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-redis</artifactId>
+            <version>8.10.0</version>
+        </dependency>
 <!--        Neo4j-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
