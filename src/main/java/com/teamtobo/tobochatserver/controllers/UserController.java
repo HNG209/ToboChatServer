@@ -44,6 +44,7 @@ public class UserController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "findByEmail", capacity = 3, refillTokens = 1, refillSeconds = 1)
     @Operation(summary = "Tìm người dùng bằng email")
     @GetMapping("/{email}")
     public ApiResponse<PageResponse<UserResponse>> findByEmail(
@@ -71,6 +72,7 @@ public class UserController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "updateProfile", capacity = 1, refillTokens = 1, refillSeconds = 300)
     @Operation(summary = "Cập nhật thông tin người dùng hiện tại")
     @PutMapping("/me")
     public ResponseEntity<User> updateProfile(

@@ -30,6 +30,7 @@ public class RoomController {
     private final RoomService roomService;
     private final AttachmentService attachmentService;
 
+    @UserRateLimit(apiName = "createGroup", capacity = 1, refillTokens = 1, refillSeconds = 60)
     @Operation(summary = "Tạo nhóm chat")
     @PostMapping
     public ApiResponse<RoomResponse> createGroup(
@@ -42,6 +43,7 @@ public class RoomController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "updateRoomSettings", capacity = 4, refillTokens = 1, refillSeconds = 1)
     @Operation(summary = "Cài đặt trạng thái phòng")
     @PatchMapping("/{roomId}")
     @RequireMemberPermission(MemberPermission.UPDATE_ROOM_SETTINGS)
@@ -54,6 +56,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "getJoinedRooms", capacity = 10, refillTokens = 1, refillSeconds = 1)
     @Operation(summary = "Danh sách phòng đã tham gia")
     @GetMapping
     public ApiResponse<PageResponse<RoomResponse>> getJoinedRooms(
@@ -96,19 +99,7 @@ public class RoomController {
                 .build();
     }
 
-    // TODO: Hàm của hệ thống, hệ thống làm tự động
-    @Operation(summary = "Đánh dấu một phòng là đã đọc")
-    @PatchMapping("/{roomId}/read")
-    public ApiResponse<Void> markAsRead (
-            @AuthenticationPrincipal Jwt jwt,
-            @PathVariable String roomId) {
-        String userId = jwt.getSubject();
-        roomMemberService.markAsReadMessage(userId, roomId);
-        return ApiResponse.<Void>builder()
-                .message("Đã đánh dấu phòng là đã đọc")
-                .build();
-    }
-
+    @UserRateLimit(apiName = "addMembers", capacity = 2, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Thêm thành viên vào nhóm chat")
     @PostMapping("/{roomId}/members")
     @RequireMemberPermission(MemberPermission.ADD_MEMBER)
@@ -124,6 +115,7 @@ public class RoomController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "getPendingRequests", capacity = 10, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Lấy danh sách pending request của nhóm")
     @GetMapping("/{roomId}/pending-requests")
     @RequireMemberPermission(MemberPermission.GET_PENDING_REQUESTS)
@@ -139,7 +131,8 @@ public class RoomController {
                 .build();
     }
 
-    @Operation(summary = "Lấy danh sách pending request của nhóm")
+    @UserRateLimit(apiName = "getRoomMembers", capacity = 10, refillTokens = 1, refillSeconds = 5)
+    @Operation(summary = "Lấy danh sách thành viên của nhóm")
     @GetMapping("/{roomId}/members")
     @RequireRoomMember
     public ApiResponse<PageResponse<RoomMemberResponse>> getRoomMembers(
@@ -152,6 +145,7 @@ public class RoomController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "getRoomAttachments", capacity = 10, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Lấy danh sách media hoặc file của phòng chat")
     @GetMapping("/{roomId}/attachments")
     @RequireRoomMember
@@ -168,6 +162,7 @@ public class RoomController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "approveMember", capacity = 5, refillTokens = 1, refillSeconds = 2)
     @Operation(summary = "Phê duyệt hoặc từ chối thành viên vào group")
     @PatchMapping("/{roomId}/pending-requests/{userId}")
     @RequireMemberPermission(MemberPermission.APPROVE_MEMBER)
@@ -187,6 +182,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "updateMember", capacity = 3, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Chỉnh sửa quyền member")
     @PatchMapping("/{roomId}/members/{memberId}")
     @RequireMemberPermission(MemberPermission.UPDATE_MEMBER_ROLE)
@@ -201,6 +197,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "removeMember", capacity = 3, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Xoá thành viên ra khỏi nhóm")
     @DeleteMapping("/{roomId}/members/{memberId}")
     @RequireMemberPermission(MemberPermission.REMOVE_MEMBER)
@@ -246,6 +243,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "getRoomAvatarUploadUrl", capacity = 1, refillTokens = 1, refillSeconds = 60)
     @Operation(summary = "Lấy presigned URL để upload avatar phòng")
     @GetMapping("/{roomId}/avatar/upload-url")
     @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
@@ -257,6 +255,7 @@ public class RoomController {
                 .build();
     }
 
+    @UserRateLimit(apiName = "updateRoomAvatar", capacity = 1, refillTokens = 1, refillSeconds = 60)
     @Operation(summary = "Cập nhật avatar phòng")
     @PatchMapping("/{roomId}/avatar")
     @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
@@ -269,6 +268,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "updateRoomName", capacity = 1, refillTokens = 1, refillSeconds = 60)
     @Operation(summary = "Cập nhật tên phòng")
     @PatchMapping("/{roomId}/name")
     @RequireMemberPermission(MemberPermission.UPDATE_ROOM_METADATA)
@@ -281,5 +281,4 @@ public class RoomController {
         roomDomainService.updateRoomName(userId, roomId, request.getRoomName());
         return ResponseEntity.noContent().build();
     }
-
 }

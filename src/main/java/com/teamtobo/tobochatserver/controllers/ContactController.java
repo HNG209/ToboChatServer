@@ -74,6 +74,7 @@ public class ContactController {
         contactService.cancelFriendRequest(userId, otherId);
         return ResponseEntity.noContent().build();
     }
+
     @Operation(summary = "Xoá bạn bè")
     @DeleteMapping("{userId}/friends/{otherId}")
     public ResponseEntity<Void> deleteFriend(
@@ -83,6 +84,7 @@ public class ContactController {
 
         return ResponseEntity.noContent().build();
     }
+
     @Operation(summary = "Trạng thái bạn bè")
     @GetMapping("/{otherId}/friend-status")
     public ApiResponse<FriendStatus> getFriendStatus(

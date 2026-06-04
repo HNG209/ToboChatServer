@@ -69,6 +69,7 @@ public class PollServiceImpl implements PollService {
                         .sendEvent("poll_generated", aiResult);
 
             } catch (Exception e) {
+                e.printStackTrace();
                 socketIOServer.getRoomOperations(userId)
                         .sendEvent("poll_generated_error", Map.of("message", "Lỗi gen AI"));
             }

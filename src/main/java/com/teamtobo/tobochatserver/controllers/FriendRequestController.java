@@ -23,9 +23,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/friend-requests")
 @RequiredArgsConstructor
 public class FriendRequestController {
-    private final UserService userService;
     private final ContactService contactService;
-    private final UserDomainService userDomainService;
 
     @Operation(summary = "Gửi lời mời kết bạn")
     @PostMapping("/{otherId}")
@@ -82,15 +80,4 @@ public class FriendRequestController {
                 ))
                 .build();
     }
-
-//    @Operation(summary = "Đọc thông báo lời mời kết bạn")
-//    @PatchMapping("/read")
-//    public ApiResponse<Void> markReadFriendRequest (@AuthenticationPrincipal Jwt jwt) {
-//        String userId = jwt.getSubject();
-//        userService.markReadFriendRequest(userId);
-//        return ApiResponse.<Void>builder()
-//                .message("Đã xóa badge thông báo kết bạn")
-//                .build();
-//    }
-
 }

@@ -170,6 +170,7 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "createPoll", capacity = 3, refillTokens = 1, refillSeconds = 5)
     @Operation(summary = "Tạo poll")
     @PostMapping("/rooms/{roomId}/polls")
     public ResponseEntity<Void> createPoll(
@@ -183,6 +184,7 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    @UserRateLimit(apiName = "generatePoll", capacity = 3, refillTokens = 1, refillSeconds = 20)
     @Operation(summary = "Generate nội dung poll bằng AI")
     @PostMapping("/polls")
     public ResponseEntity<Void> generatePoll(
