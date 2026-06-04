@@ -114,6 +114,13 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.PENDING_REQUEST_NOT_FOUND);
         }
 
+        socketIOServer.getRoomOperations("room:" + roomId)
+                .sendEvent("pending_removed", Map.of(
+                        "roomId", roomId,
+                        "targetUserId", targetUserId
+                ));
+
+        // Giảm pending count
         if (room.getPendingCount() > 0) {
             room.setPendingCount(room.getPendingCount() - 1);
             roomTable.updateItem(room);
@@ -199,7 +206,11 @@ public class RoomDomainServiceImpl implements RoomDomainService {
             throw new AppException(ErrorCode.INVALID_PERMISSION);
         }
 
+        Room room = roomService.getRoomById(roomId, false);
+        room.setMemberCount(room.getMemberCount() - 1);
+
         roomMemberTable.deleteItem(target);
+        roomTable.updateItem(room);
 
         // Xoá cạnh quan hệ trong Neo4j
         deleteMemberRelationshipNeo4j(roomId, memberId);
@@ -615,8 +626,8 @@ public class RoomDomainServiceImpl implements RoomDomainService {
 
         // Nhóm có xét duyệt không?
         if (room.isApproveMember()) {
-            // Inviter có phải Admin không?
-            if (inviter.getRole() != MemberRole.ADMIN) {
+            // Inviter có phải Admin hay Vice Admin không?
+            if (inviter.getRole() == MemberRole.MEMBER) {
                 // Thành viên thường thêm người thì phải chờ duyệt (Pending)
                 createGroupPendingRequestNeo4j(roomId, inviterId, targetUserId);
                 return MemberStatus.PENDING;
@@ -903,8 +914,14 @@ public class RoomDomainServiceImpl implements RoomDomainService {
     // Tạo lời mời chờ duyệt
     @Override
     public void createGroupPendingRequestNeo4j(String roomId, String inviterId, String targetUserId) {
+        Room room = roomService.getRoomById(roomId, false);
         UserResponse inviter = userService.getUserProfile(inviterId);
         UserResponse targetUser = userService.getUserProfile(targetUserId);
+
+        // Tăng pending count
+        room.setPendingCount(room.getPendingCount() + 1);
+
+        roomTable.updateItem(room);
 
         roomNodeRepository.createPendingRequest(roomId, inviterId, targetUserId);
 
