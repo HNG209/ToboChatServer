@@ -4,6 +4,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.teamtobo.tobochatserver.dtos.events.MemberInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.events.UserInboxUpdateEvent;
 import com.teamtobo.tobochatserver.dtos.response.MessageResponse;
+import com.teamtobo.tobochatserver.dtos.response.RoomMemberResponse;
 import com.teamtobo.tobochatserver.entities.enums.FriendStatus;
 import com.teamtobo.tobochatserver.entities.enums.InboxStatus;
 import com.teamtobo.tobochatserver.services.*;
@@ -44,8 +45,13 @@ public class InboxUpdateEventHandler {
                     if(event.isIgnoreSender() && event.getSenderId().equals(memberId)) return;
 
                     if (event.getRoomId().contains("_") && !memberId.equals(event.getSenderId())) {
-                        FriendStatus friendStatus = contactService.getFriendStatus(event.getSenderId(), memberId);
-                        inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
+                        RoomMemberResponse roomMemberResponse = roomMemberService.getMember(memberId, event.getRoomId());
+
+                        // Nếu trước đó đã nằm trong inbox chính rồi
+                        if (roomMemberResponse.getStatus() != InboxStatus.ACTIVE) {
+                            FriendStatus friendStatus = contactService.getFriendStatus(event.getSenderId(), memberId);
+                            inboxStatus = (friendStatus == FriendStatus.FRIEND) ? InboxStatus.ACTIVE : InboxStatus.PENDING;
+                        }
                     }
 
                     roomMemberService.upsertMemberInbox(

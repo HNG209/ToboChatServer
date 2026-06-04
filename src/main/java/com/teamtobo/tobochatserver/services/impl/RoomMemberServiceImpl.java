@@ -554,46 +554,6 @@ public class RoomMemberServiceImpl implements RoomMemberService {
                 .build());
     }
 
-//    @Override
-//    public void upsertMemberInbox(String roomId, String memberId, InboxStatus status, String now) {
-//        String pk = "ROOM#" + roomId;
-//        String sk = "MEMBER#" + memberId;
-//
-//        Key key = Key.builder()
-//                .partitionValue(pk)
-//                .sortValue(sk)
-//                .build();
-//
-//        // 1. Kiểm tra xem record đã tồn tại chưa
-//        RoomMember member = roomMemberTable.getItem(key);
-//
-//        if (member != null) {
-//            System.out.println("update:" + member);
-//            // Cập nhật
-//            member.setUpdatedAt(now);
-//
-//            // Lưu ý: Không thay đổi status cũ trừ khi có logic duyệt tin nhắn chờ ở chỗ khác.
-//            // Chỉ tính toán lại chuỗi statusTime dựa trên status hiện tại của DB.
-//            if (member.getStatus() != null) {
-//                member.setStatusTime("STATUS#" + member.getStatus().name() + "#TIME#" + now);
-//            }
-//
-//            roomMemberTable.updateItem(member);
-//        } else {
-//            // Tạo mới
-//            RoomMember newMember = RoomMember.builder()
-//                    .pk(pk)
-//                    .sk(sk)
-//                    .status(status) // Trạng thái này do hàm sendMessage quyết định (ACTIVE hoặc PENDING)
-//                    .createdAt(now)
-//                    .updatedAt(now)
-//                    .statusTime("STATUS#" + status.name() + "#TIME#" + now)
-//                    .build();
-//
-//            roomMemberTable.putItem(newMember);
-//        }
-//    }
-
     @Override
     public RoomMember getMemberById(String memberId, String roomId) {
         Key key = Key.builder()
@@ -609,6 +569,7 @@ public class RoomMemberServiceImpl implements RoomMemberService {
         RoomMember member = getMemberById(memberId, roomId);
         return RoomMemberResponse.builder()
                 .id(memberId)
+                .status(member.getStatus())
                 .roomName(member.getRoomName())
                 .role(member.getRole())
                 .roomType(member.getRoomType())

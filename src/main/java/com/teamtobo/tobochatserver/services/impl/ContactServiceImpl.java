@@ -233,7 +233,20 @@ public class ContactServiceImpl implements ContactService {
         // Cập nhật unread cho người dùng nếu đã chấp nhận hoặc từ chối
         eventPublisher.publishEvent(new UnreadFriendRequestUpdateEvent(userId, null, UnreadUpdateType.RESET));
 
-        if (!request.isAccepted()) return;
+        if (!request.isAccepted()) {
+            socketIOServer.getRoomOperations(senderId)
+                    .sendEvent("friend_request_cancelled", Map.of(
+                            "otherId", userId,
+                            "type", FriendRequestType.SENT
+                    ));
+
+            socketIOServer.getRoomOperations(userId)
+                    .sendEvent("friend_request_cancelled", Map.of(
+                            "otherId", senderId,
+                            "type", FriendRequestType.PENDING
+                    ));
+            return;
+        }
 
         userNodeRepository.createFriend(senderId, userId);
 
