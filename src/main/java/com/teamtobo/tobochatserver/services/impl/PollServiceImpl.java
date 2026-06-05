@@ -183,7 +183,7 @@ public class PollServiceImpl implements PollService {
             MessageResponse response = chatService.buildMessageResponse(pollMessage);
             socketIOServer.getRoomOperations("room:" + roomId).sendEvent("poll_updated", response);
 
-            // chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("pollId", pollId));
+            chatDomainService.sendSystemMessage(roomId, userId, SystemAction.POLL_VOTED, Map.of("pollId", pollId));
 
             return response;
         }

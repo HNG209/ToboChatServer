@@ -48,7 +48,8 @@ public class CallServiceImpl implements CallService {
     private final SocketIOServer socketIOServer;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final Map<String, ScheduledFuture<?>> callTimeouts = new ConcurrentHashMap<>();
-
+    // 1. TẠO BỘ KHÓA (LOCKS) THEO TỪNG PHÒNG
+    private final Map<String, Object> callLocks = new ConcurrentHashMap<>();
     @Override
     public String generateCallToken(String roomName, String participantName, String participantId) {
         AccessToken token = new AccessToken(livekitApiKey, livekitApiSecret);
@@ -62,55 +63,60 @@ public class CallServiceImpl implements CallService {
 
     @Override
     public void processCancelCall(String callerId, String roomId) {
-        ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
-        if (timeout != null) {
-            timeout.cancel(false);
+        // Lấy ổ khóa của phòng này (Nếu chưa có thì tạo mới)
+        Object lock = callLocks.computeIfAbsent(roomId, k -> new Object());
+
+        synchronized (lock) {
+            ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
+            if (timeout != null) {
+                timeout.cancel(false);
+            }
+
+            boolean isVideoCall = callSessionManager.isVideoCall(roomId);
+
+            CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
+
+            socketIOServer.getRoomOperations(callerId).sendEvent("call_cancelled",
+                    CallRequest.builder().roomId(roomId).build());
+
+            if (result == null) {
+                socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
+                        Map.of("roomId", roomId,
+                                "status", CallStatus.INACTIVE));
+                return;
+            }
+
+            if (result.getStatus().equals("ONGOING")) {
+                socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
+                        Map.of("roomId", roomId,
+                                "status", CallStatus.ACTIVE));
+                return;
+            }
+
+            eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
+
+            String originalCallerId = result.getInitiatorId();
+            Room room = roomService.getRoomById(roomId, false);
+
+            Map<String, String> widgetMetadata = new HashMap<>();
+            widgetMetadata.put("widgetType", "CALL");
+            widgetMetadata.put("callerId", originalCallerId);
+            widgetMetadata.put("status", result.getStatus());
+
+            if (room != null && room.getRoomType() == RoomType.GROUP) {
+                widgetMetadata.put("isGroupCall", "true");
+            }
+
+            if (result.getStatus().equals("ENDED")) {
+                log.info("Cuộc gọi phòng [{}] kết thúc, thời lượng: {}s", roomId, result.getDuration());
+                widgetMetadata.put("duration", String.valueOf(result.getDuration()));
+                widgetMetadata.put("isVideoCall", isVideoCall ? "true" : "false");
+            } else {
+                log.info("Cuộc gọi phòng [{}] bị nhỡ", roomId);
+            }
+
+            eventPublisher.publishEvent(new WidgetMessageCreateEvent(roomId, originalCallerId, widgetMetadata));
         }
-
-        boolean isVideoCall = callSessionManager.isVideoCall(roomId);
-
-        CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
-
-        socketIOServer.getRoomOperations(callerId).sendEvent("call_cancelled",
-                CallRequest.builder().roomId(roomId).build());
-
-        if (result == null) {
-            socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
-                    Map.of("roomId", roomId,
-                            "status", CallStatus.INACTIVE));
-            return;
-        }
-
-        if (result.getStatus().equals("ONGOING")) {
-            socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
-                    Map.of("roomId", roomId,
-                            "status", CallStatus.ACTIVE));
-            return;
-        }
-
-        eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
-
-        String originalCallerId = result.getInitiatorId();
-        Room room = roomService.getRoomById(roomId, false);
-
-        Map<String, String> widgetMetadata = new HashMap<>();
-        widgetMetadata.put("widgetType", "CALL");
-        widgetMetadata.put("callerId", originalCallerId);
-        widgetMetadata.put("status", result.getStatus());
-
-        if (room != null && room.getRoomType() == RoomType.GROUP) {
-            widgetMetadata.put("isGroupCall", "true");
-        }
-
-        if (result.getStatus().equals("ENDED")) {
-            log.info("Cuộc gọi phòng [{}] kết thúc, thời lượng: {}s", roomId, result.getDuration());
-            widgetMetadata.put("duration", String.valueOf(result.getDuration()));
-            widgetMetadata.put("isVideoCall", isVideoCall ? "true" : "false");
-        } else {
-            log.info("Cuộc gọi phòng [{}] bị nhỡ", roomId);
-        }
-
-        eventPublisher.publishEvent(new WidgetMessageCreateEvent(roomId, originalCallerId, widgetMetadata));
     }
 
     @Override
@@ -155,9 +161,16 @@ public class CallServiceImpl implements CallService {
         eventPublisher.publishEvent(new CallRequestEvent(callerId, roomId, callerToken, isVideoCall));
 
         ScheduledFuture<?> timeoutTask = scheduler.schedule(() -> {
-            log.info("Cuộc gọi phòng [{}] quá 30s không ai bắt máy. Tự động tắt.", roomId);
-            callTimeouts.remove(roomId); // Xóa khỏi bộ nhớ
-            this.processCancelCall(callerId, roomId); // Kích hoạt tắt cuộc gọi
+            Object lock = callLocks.computeIfAbsent(roomId, k -> new Object());
+            // 4. BẢO VỆ LUỒNG TIMEOUT CHỐNG RACE CONDITION
+            synchronized (lock) {
+                // Kiểm tra xem Accept/Cancel đã cướp cờ và gỡ timeout này đi chưa
+                if (!callTimeouts.containsKey(roomId)) {
+                    return; // Nếu đã bị xử lý, bắt buộc bộ đếm 30s phải quay xe
+                }
+                log.info("Cuộc gọi phòng [{}] quá 30s không ai bắt máy. Tự động tắt.", roomId);
+                this.processCancelCall(callerId, roomId);
+            }
         }, 30, TimeUnit.SECONDS);
 
         // Lưu lại bộ đếm giờ theo mã phòng
@@ -166,28 +179,37 @@ public class CallServiceImpl implements CallService {
 
     @Override
     public void handleAcceptCall(SocketIOClient client, String userId, String roomId, Boolean isVideoCall, CallRequest data) {
-        ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
-        if (timeout != null) {
-            timeout.cancel(false);
-        }
+        Object lock = callLocks.computeIfAbsent(roomId, k -> new Object());
 
-        // Kểm tra người dùng bắt máy chưa, chỉ được bắt máy trên 1 thiết bị tại 1 thời điểm
-        if (callSessionManager.markAsAnswered(roomId, userId)) {
-            log.info("Phòng [{}] đã có người bắt máy: {}", roomId, userId);
-
-            // Sinh Token cho người vừa bắt máy
-            User user = userService.getUserById(userId);
-            String token = this.generateCallToken(roomId, user.getName(), userId);
-
-            // Gửi Token về cho thiết bị vừa bấm (dùng call_joined hoặc sự kiện mới)
-            client.sendEvent("call_joined", new CallResponse(token, roomId, isVideoCall));
-
-            // Gửi lệnh tắt popup đổ chuông trên các thiết bị khác (iPad, Web...) của user này
-            if (userId != null) {
-                socketIOServer.getRoomOperations(userId).sendEvent("call_accepted", data);
+        synchronized (lock) {
+            if (!callSessionManager.isCallActive(roomId)) {
+                client.sendEvent("call_error", "Cuộc gọi đã kết thúc.");
+                return;
             }
-        } else {
-            log.warn("User [{}] đã bắt máy phòng [{}] trước đó rồi", userId, roomId);
+
+            ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
+            if (timeout != null) {
+                timeout.cancel(false);
+            }
+
+            // Kểm tra người dùng bắt máy chưa, chỉ được bắt máy trên 1 thiết bị tại 1 thời điểm
+            if (callSessionManager.markAsAnswered(roomId, userId)) {
+                log.info("Phòng [{}] đã có người bắt máy: {}", roomId, userId);
+
+                // Sinh Token cho người vừa bắt máy
+                User user = userService.getUserById(userId);
+                String token = this.generateCallToken(roomId, user.getName(), userId);
+
+                // Gửi Token về cho thiết bị vừa bấm (dùng call_joined hoặc sự kiện mới)
+                client.sendEvent("call_joined", new CallResponse(token, roomId, isVideoCall));
+
+                // Gửi lệnh tắt popup đổ chuông trên các thiết bị khác (iPad, Web...) của user này
+                if (userId != null) {
+                    socketIOServer.getRoomOperations(userId).sendEvent("call_accepted", data);
+                }
+            } else {
+                log.warn("User [{}] đã bắt máy phòng [{}] trước đó rồi", userId, roomId);
+            }
         }
     }
 
