@@ -67,11 +67,6 @@ public class CallServiceImpl implements CallService {
         Object lock = callLocks.computeIfAbsent(roomId, k -> new Object());
 
         synchronized (lock) {
-            ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
-            if (timeout != null) {
-                timeout.cancel(false);
-            }
-
             boolean isVideoCall = callSessionManager.isVideoCall(roomId);
 
             CallSessionManager.CallResult result = callSessionManager.leaveCall(roomId, callerId);
@@ -80,6 +75,11 @@ public class CallServiceImpl implements CallService {
                     CallRequest.builder().roomId(roomId).build());
 
             if (result == null) {
+                ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
+                if (timeout != null) {
+                    timeout.cancel(false);
+                }
+
                 socketIOServer.getRoomOperations(callerId).sendEvent("call_status_updated",
                         Map.of("roomId", roomId,
                                 "status", CallStatus.INACTIVE));
@@ -91,6 +91,11 @@ public class CallServiceImpl implements CallService {
                         Map.of("roomId", roomId,
                                 "status", CallStatus.ACTIVE));
                 return;
+            }
+
+            ScheduledFuture<?> timeout = callTimeouts.remove(roomId);
+            if (timeout != null) {
+                timeout.cancel(false);
             }
 
             eventPublisher.publishEvent(new CallCancelledEvent(callerId, roomId));
